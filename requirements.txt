@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+apify-client
+openai
+python-dotenv
+requests
+celery[redis]
+redis
+flower
