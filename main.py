@@ -5,6 +5,11 @@ from pydantic import BaseModel
 from typing import List, Optional
 from tasks import scrape_tiktok_async, long_running_task, celery_app
 import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
 
 app = fastapi.FastAPI(title="Apify TikTok Scraper with Redis", version="1.0.0")
 
@@ -30,6 +35,23 @@ def health_check():
         "status": "healthy",
         "redis_connected": check_redis_connection(),
         "services": ["web", "redis", "worker"]
+    }
+
+@app.get("/debug/env")
+def debug_env():
+    """
+    Debug endpoint to check environment variables (without exposing secrets)
+    """
+    apify_token = os.getenv('APIFY_API_TOKEN') or os.getenv('APIFY_API_KEY')
+    return {
+        "redis_url_set": bool(os.getenv('REDIS_URL')),
+        "apify_token_set": bool(apify_token),
+        "apify_key_set": bool(os.getenv('APIFY_API_KEY')),  # Legacy check
+        "openai_key_set": bool(os.getenv('OPENAI_API_KEY')),
+        "apify_token_length": len(apify_token or ''),
+        "apify_token_preview": (
+            f"{apify_token[:8]}..." if apify_token else "Not set"
+        )
     }
 
 @app.post("/scrape/async", response_model=TaskResponse)

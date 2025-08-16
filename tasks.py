@@ -1,11 +1,13 @@
 import os
-from celery import Celery
+from celery import Celery, states
+from celery.exceptions import Ignore
 import requests
 from apify_client import ApifyClient
 from openai import OpenAI
 from dotenv import load_dotenv
 import time
 import json
+import traceback
 from typing import List
 from pydantic import BaseModel
 
@@ -47,7 +49,14 @@ def scrape_tiktok_async(self, post_url: str, process_with_ai: bool = True):
         }) 
         
         # Initialize Apify client
-        client = ApifyClient("apify_api_iYcAqVugvyZlguYWGWoOY5DVwbDKI83GSqR2")
+        apify_token = os.getenv("APIFY_API_TOKEN") or os.getenv("APIFY_API_KEY")
+        
+        # Debug: Check if token is loaded
+        if not apify_token:
+            raise ValueError("APIFY_API_TOKEN or APIFY_API_KEY not found in environment variables. Please check your .env file.")
+        
+    
+        client = ApifyClient(apify_token)
         
         # Update progress - preparing scrape
         self.update_state(state='PROGRESS', meta={
@@ -78,7 +87,16 @@ def scrape_tiktok_async(self, post_url: str, process_with_ai: bool = True):
             'details': 'Running Apify actor to extract video content and metadata'
         })
         
-        run = client.actor("S5h7zRLfKFEr8pdj7").call(run_input=run_input)
+        try:
+            run = client.actor("S5h7zRLfKFEr8pdj7").call(run_input=run_input)
+        except Exception as apify_error:
+            error_msg = str(apify_error)
+            if "401" in error_msg or "Unauthorized" in error_msg:
+                raise ValueError(f"Apify API authentication failed. Please check your APIFY_API_TOKEN in .env file. Error: {error_msg}")
+            elif "403" in error_msg or "Forbidden" in error_msg:
+                raise ValueError(f"Apify API access forbidden. Check your token permissions. Error: {error_msg}")
+            else:
+                raise ValueError(f"Apify API error: {error_msg}")
         
         video_data = {
             "url": post_url,
@@ -134,15 +152,17 @@ def scrape_tiktok_async(self, post_url: str, process_with_ai: bool = True):
         
     except Exception as exc:
         self.update_state(
-            state='FAILURE',
+            state=states.FAILURE,
             meta={
                 'url': post_url,
                 'error': str(exc),
                 'status': 'Failed to scrape TikTok video',
-                'details': f'Error occurred while processing: {str(exc)}'
+                'details': f'Error occurred while processing: {str(exc)}',
+                'exc_type': type(exc).__name__,
+                'exc_message': traceback.format_exc().split('\n')
             }
         )
-        raise exc
+        raise Ignore()
 
 @celery_app.task
 def process_text_with_ai(text: str):
