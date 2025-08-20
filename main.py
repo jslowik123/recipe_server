@@ -16,7 +16,6 @@ app = fastapi.FastAPI(title="Apify TikTok Scraper with Redis", version="1.0.0")
 # Pydantic Models
 class TikTokScrapeRequest(BaseModel):
     url: str
-    process_with_ai: bool = True
 
 
 
@@ -65,7 +64,7 @@ def scrape_tiktok_videos_async(request: TikTokScrapeRequest):
             raise HTTPException(status_code=422, detail="URL is required and cannot be empty")
         
         # Start the async task
-        task = scrape_tiktok_async.delay(request.url.strip(), request.process_with_ai)
+        task = scrape_tiktok_async.delay(request.url.strip())
         
         return TaskResponse(
             task_id=task.id,
@@ -106,30 +105,39 @@ def get_task_status(task_id: str):
             }
         elif task_result.state == 'SUCCESS':
             result = task_result.result
-            response = {
-                "task_id": task_id,
-                "status": "SUCCESS",
-                "result": result
-            }
             
-            # If there's AI processing, make it more visible
+            # Simplified response format with status field
             if result and isinstance(result, dict):
                 video_result = result.get('result', {})
-                if video_result and video_result.get('processed_recipe'):
-                    response["ai_recipe"] = video_result['processed_recipe']
-                    response["has_ai_processing"] = True
-                else:
-                    response["has_ai_processing"] = False
-                    
-                # Also add summary info for easier access
-                response["summary"] = {
-                    "url": result.get('url', ''),
-                    "has_subtitles": result.get('has_subtitles', False),
-                    "has_ai_processing": result.get('has_ai_processing', False),
-                    "processed_at": result.get('processed_at', '')
+                recipe = video_result.get('processed_recipe')
+                
+                return {
+                    "task_id": task_id,
+                    "status": "SUCCESS",
+                    "result": {
+                        "url": result.get('url', ''),
+                        "title": recipe.get('title', 'Untitled Recipe') if recipe else 'Untitled Recipe',
+                        "ingredients": recipe.get('ingredients', []) if recipe else [],
+                        "steps": recipe.get('steps', []) if recipe else [],
+                        "text": video_result.get('text', ''),
+                        "has_subtitles": result.get('has_subtitles', False),
+                        "result": video_result
+                    }
                 }
             
-            return response
+            return {
+                "task_id": task_id,
+                "status": "SUCCESS",
+                "result": {
+                    "url": "",
+                    "title": "Untitled Recipe",
+                    "ingredients": [],
+                    "steps": [],
+                    "text": "",
+                    "has_subtitles": False,
+                    "result": {}
+                }
+            }
         else:  # FAILURE
             return {
                 "task_id": task_id,

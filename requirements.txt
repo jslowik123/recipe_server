@@ -7,3 +7,6 @@ requests
 celery[redis]
 redis
 flower
+opencv-python-headless
+pandas
+openpyxl

@@ -10,6 +10,32 @@ import json
 import traceback
 from typing import List
 from pydantic import BaseModel
+import cv2
+import base64
+import tempfile
+import logging
+
+# Configure logging (console only)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()  # Only console output, no log files
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Import tracking
+try:
+    from tracking import tracker, calculate_openai_cost
+except ImportError:
+    # Fallback if tracking not available
+    class DummyTracker:
+        def track_request(self, **kwargs):
+            pass
+    tracker = DummyTracker()
+    def calculate_openai_cost(*args, **kwargs):
+        return 0.0
 
 # Load environment variables
 load_dotenv()
@@ -18,6 +44,97 @@ load_dotenv()
 class SimpleRecipeResponse(BaseModel):
     ingredients: List[str]
     steps: List[str]
+
+def download_and_extract_frames(video_url: str, max_frames: int = 20):
+    """
+    Download video and extract frames as base64 encoded images
+    """
+    logger.info(f"🎬 Starting frame extraction from: {video_url}")
+    video_path = None
+    
+    try:
+        # Download video to temporary file
+        logger.info(f"📥 Downloading video with timeout 30s...")
+        response = requests.get(video_url, stream=True, headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }, timeout=30)
+        
+        logger.info(f"📥 Video download response: {response.status_code}")
+        if response.status_code != 200:
+            logger.error(f"❌ Failed to download video: HTTP {response.status_code}")
+            return []
+        
+        # Get content length if available
+        content_length = response.headers.get('content-length')
+        if content_length:
+            logger.info(f"📦 Video size: {int(content_length) / 1024 / 1024:.1f} MB")
+        
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
+            total_size = 0
+            for chunk in response.iter_content(chunk_size=8192):
+                tmp_file.write(chunk)
+                total_size += len(chunk)
+            video_path = tmp_file.name
+            logger.info(f"💾 Downloaded {total_size / 1024 / 1024:.1f} MB to {video_path}")
+        
+        # Extract frames
+        logger.info(f"🎞️ Opening video file for frame extraction...")
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            logger.error(f"❌ Could not open video file: {video_path}")
+            os.remove(video_path)
+            return []
+        
+        frames = []
+        frame_count = 0
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        duration = total_frames / fps if fps > 0 else 0
+        
+        logger.info(f"📊 Video info: {total_frames} frames, {fps:.1f} FPS, {duration:.1f}s duration")
+        
+        # Extract frames evenly distributed across video
+        frame_interval = max(1, total_frames // max_frames)
+        logger.info(f"🔢 Extracting every {frame_interval}th frame (max {max_frames} frames)")
+        
+        while cap.isOpened() and len(frames) < max_frames:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            if frame_count % frame_interval == 0:
+                # Resize frame to reduce size
+                height, width = frame.shape[:2]
+                resized = cv2.resize(frame, (256, 144))
+                _, buffer = cv2.imencode(".jpg", resized, [cv2.IMWRITE_JPEG_QUALITY, 60])
+                base64_frame = base64.b64encode(buffer).decode("utf-8")
+                frames.append(base64_frame)
+                
+                logger.debug(f"🖼️ Extracted frame {len(frames)}/{max_frames} at position {frame_count}/{total_frames} (original: {width}x{height}, resized: 256x144)")
+            
+            frame_count += 1
+        
+        cap.release()
+        os.remove(video_path)
+        
+        logger.info(f"✅ Successfully extracted {len(frames)} frames from video")
+        return frames
+        
+    except Exception as e:
+        logger.error(f"❌ Frame extraction failed: {e}")
+        logger.error(f"📋 Traceback: {traceback.format_exc()}")
+        
+        # Clean up temp file if it exists
+        if video_path and os.path.exists(video_path):
+            try:
+                os.remove(video_path)
+                logger.info(f"🧹 Cleaned up temporary file: {video_path}")
+            except:
+                pass
+        
+        return []
+    
 
 # Celery Setup
 redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
@@ -34,15 +151,17 @@ celery_app.conf.update(
 )
 
 @celery_app.task(bind=True)
-def scrape_tiktok_async(self, post_url: str, process_with_ai: bool = True):
+def scrape_tiktok_async(self, post_url: str):
     """
     Asynchronously scrape a single TikTok video and optionally process with AI
     """
+    logger.info(f"🚀 Starting TikTok scraping task for: {post_url}")
+    
     try:
         # Update task state
         self.update_state(state='PROGRESS', meta={
             'step': 1, 
-            'total_steps': 4, 
+            'total_steps': 5, 
             'status': 'Initializing Apify client...',
             'url': post_url,
             'details': 'Setting up scraping infrastructure'
@@ -53,9 +172,10 @@ def scrape_tiktok_async(self, post_url: str, process_with_ai: bool = True):
         
         # Debug: Check if token is loaded
         if not apify_token:
+            logger.error("❌ APIFY_API_TOKEN not found in environment")
             raise ValueError("APIFY_API_TOKEN or APIFY_API_KEY not found in environment variables. Please check your .env file.")
         
-    
+        logger.info(f"🔑 Using Apify token: {apify_token[:8]}...{apify_token[-4:]}")
         client = ApifyClient(apify_token)
         
         # Update progress - preparing scrape
@@ -109,38 +229,142 @@ def scrape_tiktok_async(self, post_url: str, process_with_ai: bool = True):
             dataset_id = run["defaultDatasetId"]
             
             # Get results from dataset
-            for item in client.dataset(dataset_id).iterate_items():
+            logger.info(f"📋 Processing dataset results from: {dataset_id}")
+            
+            for item_idx, item in enumerate(client.dataset(dataset_id).iterate_items()):
+                logger.info(f"📄 Processing item {item_idx + 1} from dataset")
+                
+                # Log available keys in the item
+                logger.info(f"🔑 Available keys in item: {list(item.keys())}")
+                
+                # Check for scraping errors first
+                if 'error' in item:
+                    error_msg = item.get('error', 'Unknown error')
+                    logger.error(f"❌ Apify scraping error: {error_msg}")
+                    if 'not found or is private' in str(error_msg).lower():
+                        raise ValueError(f"Video not accessible: {error_msg}. The video may be private, deleted, or the URL is invalid.")
+                    else:
+                        raise ValueError(f"Scraping failed: {error_msg}")
+                
                 video_data["text"] = item.get("text", "")
+                logger.info(f"📝 Extracted text length: {len(video_data['text'])} characters")
                 
                 # Update progress - processing subtitles
                 self.update_state(state='PROGRESS', meta={
                     'step': 4, 
-                    'total_steps': 4, 
+                    'total_steps': 5, 
                     'status': 'Processing video content...',
                     'url': post_url,
                     'details': 'Extracting subtitles and preparing final data'
                 })
                 
-                # Download subtitles if available
-                if "videoMeta" in item and "subtitleLinks" in item["videoMeta"] and len(item["videoMeta"]["subtitleLinks"]) > 0:
-                    subtitle_url = item["videoMeta"]["subtitleLinks"][0]["downloadLink"]
-                    transcript_response = requests.get(subtitle_url)
-                    if transcript_response.status_code == 200:
-                        video_data["subtitles"] = transcript_response.text
+                # Download subtitles if available - ENHANCED SUBTITLE EXTRACTION
+                subtitle_links = []
+                if "videoMeta" in item:
+                    logger.info(f"🎥 Found videoMeta with keys: {list(item['videoMeta'].keys()) if item['videoMeta'] else 'None'}")
+                    
+                    if "subtitleLinks" in item["videoMeta"] and item["videoMeta"]["subtitleLinks"]:
+                        subtitle_links = item["videoMeta"]["subtitleLinks"]
+                        logger.info(f"🔍 Found {len(subtitle_links)} subtitle links")
+                        
+                        # Try all subtitle links, not just the first one
+                        for i, subtitle_link in enumerate(subtitle_links):
+                            try:
+                                subtitle_url = subtitle_link.get("downloadLink")
+                                if subtitle_url:
+                                    logger.info(f"📥 Downloading subtitles from link {i+1}: {subtitle_url[:50]}...")
+                                    transcript_response = requests.get(subtitle_url, timeout=15)
+                                    if transcript_response.status_code == 200:
+                                        video_data["subtitles"] = transcript_response.text
+                                        logger.info(f"✅ Successfully downloaded subtitles: {len(video_data['subtitles'])} characters")
+                                        break
+                                    else:
+                                        logger.warning(f"⚠️ Subtitle download failed with status: {transcript_response.status_code}")
+                            except Exception as subtitle_error:
+                                logger.error(f"❌ Error downloading subtitle {i+1}: {subtitle_error}")
+                    else:
+                        logger.info("🚫 No subtitle links found in videoMeta")
+                else:
+                    logger.info("🚫 No videoMeta found in item")
                 
-                # Process with AI if requested
-                if process_with_ai and video_data["text"]:
+                if not video_data.get("subtitles"):
+                    logger.warning("⚠️ No subtitles were successfully downloaded")
+                
+                # Extract video frames if available - ENHANCED FRAME EXTRACTION
+                frames = []
+                video_download_url = None
+                
+                # Try multiple sources for video URL
+                if "mediaUrls" in item and item["mediaUrls"] and len(item["mediaUrls"]) > 0:
+                    video_download_url = item["mediaUrls"][0]
+                    logger.info(f"🎥 Found video URL in mediaUrls: {video_download_url[:50]}...")
+                elif "videoMeta" in item and item["videoMeta"] and "downloadAddr" in item["videoMeta"]:
+                    video_download_url = item["videoMeta"]["downloadAddr"]
+                    logger.info(f"🎥 Found video URL in videoMeta.downloadAddr: {video_download_url[:50]}...")
+                elif "videoMeta" in item and item["videoMeta"] and "playAddr" in item["videoMeta"]:
+                    video_download_url = item["videoMeta"]["playAddr"]
+                    logger.info(f"🎥 Found video URL in videoMeta.playAddr: {video_download_url[:50]}...")
+                else:
+                    logger.warning("⚠️ No video download URL found in any expected location")
+                    if "videoMeta" in item and item["videoMeta"]:
+                        logger.info(f"🔍 Available videoMeta keys: {list(item['videoMeta'].keys())}")
+                
+                if video_download_url:
                     self.update_state(state='PROGRESS', meta={
                         'step': 4, 
-                        'total_steps': 4, 
-                        'status': 'Processing with AI...',
+                        'total_steps': 5, 
+                        'status': 'Extracting video frames...',
                         'url': post_url,
-                        'details': 'Generating structured recipe using OpenAI'
+                        'details': 'Downloading video and extracting frames for AI analysis'
                     })
-                    video_data["processed_recipe"] = process_text_with_ai(video_data["text"])
+                    frames = download_and_extract_frames(video_download_url, max_frames=20)
+                    logger.info(f"🖼️ Frame extraction result: {len(frames)} frames extracted")
+                else:
+                    logger.error("❌ No video URL available for frame extraction")
+                
+                # Process with AI (always process for recipe extraction)
+                self.update_state(state='PROGRESS', meta={
+                    'step': 5, 
+                    'total_steps': 5, 
+                    'status': 'Processing with AI...',
+                    'url': post_url,
+                    'details': 'Using OpenAI to analyze frames and subtitles for recipe extraction'
+                })
+                
+                # Log what data we're sending to AI
+                text_info = f"Text: {len(video_data.get('text', ''))} chars" if video_data.get('text') else "Text: None"
+                subtitle_info = f"Subtitles: {len(video_data.get('subtitles', ''))} chars" if video_data.get('subtitles') else "Subtitles: None"
+                frame_info = f"Frames: {len(frames)} images"
+                logger.info(f"🤖 Sending to AI: {text_info}, {subtitle_info}, {frame_info}")
+                
+                # Call AI processing function directly (not as Celery task)
+                video_data["processed_recipe"] = process_video_with_openai(
+                    text=video_data.get("text", ""),
+                    subtitles=video_data.get("subtitles", ""),
+                    frames=frames,
+                    url=post_url,
+                    task_id=self.request.id
+                )
+                
+                logger.info(f"✅ AI processing completed for {post_url}")
                 
                 break  # Only process first item since we're handling single URL
             
+        # Track successful task completion
+        try:
+            tracker.track_request(
+                url=post_url,
+                task_id=self.request.id,
+                success=True,
+                frames_count=len(frames) if 'frames' in locals() else 0,
+                model_used="task_completion",
+                ingredients_count=len(video_data.get('processed_recipe', {}).get('ingredients', [])),
+                steps_count=len(video_data.get('processed_recipe', {}).get('steps', [])),
+                raw_response=video_data.get('processed_recipe', {})
+            )
+        except Exception as track_error:
+            logger.error(f"❌ Task tracking error: {track_error}")
+
         return {
             'status': 'SUCCESS',
             'url': post_url,
@@ -151,6 +375,21 @@ def scrape_tiktok_async(self, post_url: str, process_with_ai: bool = True):
         }
         
     except Exception as exc:
+        logger.error(f"❌ Scraping failed for {post_url}: {exc}")
+        logger.error(f"📋 Full traceback: {traceback.format_exc()}")
+        
+        # Track failed task
+        try:
+            tracker.track_request(
+                url=post_url,
+                task_id=self.request.id,
+                success=False,
+                model_used="task_failure",
+                error_message=str(exc)
+            )
+        except Exception as track_error:
+            logger.error(f"❌ Failed task tracking error: {track_error}")
+        
         self.update_state(
             state=states.FAILURE,
             meta={
@@ -164,76 +403,318 @@ def scrape_tiktok_async(self, post_url: str, process_with_ai: bool = True):
         )
         raise Ignore()
 
-@celery_app.task
+def process_video_with_openai(text: str = "", subtitles: str = "", frames: List[str] = None, url: str = "", task_id: str = ""):
+    """
+    Process video frames and text with OpenAI for recipe extraction
+    """
+    logger.info(f"🤖 Starting OpenAI processing for task {task_id}")
+    
+    try:
+        # Validate OpenAI API key
+        openai_key = os.getenv('OPENAI_API_KEY')
+        if not openai_key:
+            logger.error("❌ OPENAI_API_KEY not found in environment")
+            raise ValueError("OPENAI_API_KEY not found in environment variables")
+        
+        logger.info(f"🔑 Using OpenAI API key: {openai_key[:8]}...{openai_key[-4:]}")
+        client = OpenAI()
+        
+        # Combine text sources
+        combined_text = ""
+        if subtitles:
+            combined_text += f"SUBTITLES: {subtitles}\n\n"
+            logger.info(f"📝 Added subtitles: {len(subtitles)} characters")
+        if text and text != subtitles:
+            combined_text += f"TEXT: {text}\n\n"
+            logger.info(f"📝 Added text: {len(text)} characters")
+        
+        logger.info(f"📋 Total text input: {len(combined_text)} characters")
+        logger.info(f"🖼️ Frame input: {len(frames) if frames else 0} frames")
+        
+        if not combined_text and not frames:
+            logger.warning("⚠️ No text or frames available for processing")
+            return {
+                "title": "Untitled Recipe",
+                "ingredients": [],
+                "steps": ["Keine Daten zum Verarbeiten gefunden"]
+            }
+        
+        # Build message content
+        user_content = []
+        
+        if combined_text:
+            user_content.append({
+                "type": "text",
+                "text": f"""Rekonstruiere das komplette Rezept aus folgenden Informationen:
+
+{combined_text}
+
+DETAILANALYSE ALLER VIDEO-FRAMES:
+Analysiere jedes der {len(frames)} Bilder einzeln:
+- Was siehst du in Bild 1, 2, 3, etc.?
+- Welche Zutaten sind sichtbar?
+- Welche Kochschritte werden gezeigt?
+- Welche Mengen kannst du schätzen?
+- Welche Techniken werden verwendet?
+
+Rekonstruiere daraus ein vollständiges, kochbares Rezept mit:
+- Einem aussagekräftigen Titel (z.B. "Cremige Pasta Carbonara" oder "Schnelle Gemüsepfanne")
+- Konkreten Zutaten und realistischen Mengen
+- Detaillierten Zubereitungsschritten
+- Ergänze fehlende aber notwendige Schritte
+
+Antworte mit vollständigem JSON: {{"title": "Kurzer, aussagekräftiger Rezept-Titel", "ingredients": ["konkrete Zutat mit Menge"], "steps": ["detaillierter Schritt mit Zeiten/Temperaturen"]}}"""
+            })
+        else:
+            user_content.append({
+                "type": "text", 
+                "text": f"""Analysiere alle {len(frames)} Video-Frames einzeln und rekonstruiere das komplette Rezept:
+
+FRAME-ANALYSE:
+- Bild 1: Was siehst du? Welche Zutaten/Schritte?
+- Bild 2: Was passiert hier? Welche Veränderungen?
+- Bild 3-{len(frames)}: Fortsetzung der Analyse...
+
+Rekonstruiere daraus ein vollständiges Rezept auch wenn nicht alles explizit gezeigt wird. Nutze dein Kochwissen um ein authentisches, kochbares Rezept zu erstellen.
+
+Antworte mit JSON: {{"title": "Kurzer Rezept-Titel", "ingredients": ["konkrete Zutat mit Menge"], "steps": ["detaillierter Schritt"]}}"""
+            })
+        
+        # Add frames if available - ALLE Frames für detaillierte Analyse
+        if frames:
+            for i, frame in enumerate(frames, 1):  # ALLE verfügbaren Frames
+                user_content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{frame}"}
+                })
+        
+        start_time = time.time()
+        model_used = "gpt--mini"
+        
+        logger.info(f"🚀 Sending request to OpenAI {model_used}...")
+        logger.info(f"📊 Request contains: {len(user_content)} content items")
+        
+        try:
+            response = client.chat.completions.create(
+                model=model_used,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": """Du bist ein erfahrener Koch und Rezept-Experte. Analysiere JEDES einzelne Video-Frame detailliert und rekonstruiere das komplette Rezept.
+
+WICHTIGE REGELN:
+1. Schaue dir JEDES Bild genau an - analysiere Zutaten, Mengen, Kochgeschirr, Techniken
+2. Rekonstruiere das Rezept auch wenn es nicht explizit gezeigt wird
+3. Schätze Mengen basierend auf dem was du siehst (Tassen, Löffel, Portionsgrößen)
+4. Leite Zubereitungsschritte aus den Bildern ab (was passiert in welcher Reihenfolge?)
+5. Nutze dein Kochwissen um fehlende Schritte zu ergänzen (Gewürze, Garzeiten, Temperaturen)
+6. Falls nur Beschreibung vorhanden: Erstelle ein vollständiges, authentisches Rezept basierend auf der Beschreibung
+
+BEISPIEL für "Lasagne":
+- Analysiere alle sichtbaren Zutaten in den Frames
+- Rekonstruiere die Schichtung
+- Ergänze typische Mengen und Zubereitungszeiten
+- Gib konkrete, umsetzbare Schritte
+
+Antworte IMMER mit vollständigem JSON: {"title": "Kurzer, aussagekräftiger Rezept-Titel", "ingredients": ["konkrete Zutat mit Menge", ...], "steps": ["detaillierter Schritt", ...]}"""
+                    },
+                    {
+                        "role": "user",
+                        "content": user_content
+                    }
+                ],
+                temperature=0.3,
+                max_tokens=2000
+            )
+            logger.info(f"✅ OpenAI request successful")
+        except Exception as api_error:
+            logger.error(f"❌ OpenAI API error: {api_error}")
+            raise api_error
+        
+        processing_time = time.time() - start_time
+        
+        # Extract token usage
+        usage = response.usage
+        prompt_tokens = usage.prompt_tokens if usage else 0
+        completion_tokens = usage.completion_tokens if usage else 0
+        total_tokens = usage.total_tokens if usage else 0
+        
+        # Calculate cost
+        cost_estimate = calculate_openai_cost(prompt_tokens, completion_tokens, model_used)
+        
+        content = response.choices[0].message.content.strip()
+        logger.info(f"💬 OpenAI response length: {len(content)} characters")
+        logger.info(f"💬 First 200 chars: {content[:200]}...")
+        
+        # Parse JSON response with enhanced error handling
+        recipe_json = None
+        try:
+            # Try direct JSON parsing first
+            if content.startswith('{') and content.endswith('}'):
+                recipe_json = json.loads(content)
+                logger.info("✅ Direct JSON parsing successful")
+            else:
+                # Try to extract JSON from markdown or other formatting
+                import re
+                # More flexible JSON extraction
+                json_patterns = [
+                    r'```json\s*({.*?})\s*```',  # Markdown code blocks
+                    r'```\s*({.*?})\s*```',      # Generic code blocks
+                    r'({.*?"ingredients".*?"steps".*?})',  # JSON with required fields
+                    r'({.*?})'  # Any JSON-like structure
+                ]
+                
+                for pattern in json_patterns:
+                    json_match = re.search(pattern, content, re.DOTALL)
+                    if json_match:
+                        try:
+                            recipe_json = json.loads(json_match.group(1))
+                            logger.info(f"✅ JSON extraction successful with pattern: {pattern[:20]}...")
+                            break
+                        except json.JSONDecodeError:
+                            continue
+                
+                if not recipe_json:
+                    logger.warning("⚠️ No valid JSON found, creating fallback structure")
+                    recipe_json = {"title": "Untitled Recipe", "ingredients": [], "steps": []}
+                    
+        except json.JSONDecodeError as json_error:
+            logger.error(f"❌ JSON parsing failed: {json_error}")
+            logger.error(f"💬 Raw content: {content}")
+            recipe_json = {"title": "Untitled Recipe", "ingredients": [], "steps": []}
+        
+        # Validate structure
+        if not isinstance(recipe_json.get("title"), str):
+            recipe_json["title"] = "Untitled Recipe"
+        if not isinstance(recipe_json.get("ingredients"), list):
+            recipe_json["ingredients"] = []
+        if not isinstance(recipe_json.get("steps"), list):
+            recipe_json["steps"] = []
+        
+        # Log final recipe structure
+        logger.info(f"🍽️ Final recipe: Title='{recipe_json.get('title', 'N/A')}', Ingredients={len(recipe_json.get('ingredients', []))}, Steps={len(recipe_json.get('steps', []))}")
+        
+        # Track the request
+        try:
+            tracker.track_request(
+                url=url,
+                task_id=task_id,
+                frames_count=len(frames) if frames else 0,
+                model_used=model_used,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                cost_estimate=cost_estimate,
+                processing_time=processing_time,
+                ingredients_count=len(recipe_json.get("ingredients", [])),
+                steps_count=len(recipe_json.get("steps", [])),
+                success=True,
+                raw_response=recipe_json
+            )
+            logger.info(f"📊 Tracking successful - Cost: ${cost_estimate:.4f}, Tokens: {total_tokens}")
+        except Exception as track_error:
+            logger.error(f"❌ Tracking error: {track_error}")
+            
+        return recipe_json
+        
+    except Exception as e:
+        logger.error(f"❌ OpenAI processing failed: {e}")
+        logger.error(f"📋 Traceback: {traceback.format_exc()}")
+        
+        # Try to track the failed request
+        try:
+            tracker.track_request(
+                url=url,
+                task_id=task_id,
+                frames_count=len(frames) if frames else 0,
+                model_used="gpt-4o-mini",
+                success=False,
+                error_message=str(e)
+            )
+        except:
+            pass
+        
+        # Fallback to text-only processing
+        logger.info("🔄 Attempting fallback to text-only processing...")
+        return process_text_with_ai(text or subtitles)
+
 def process_text_with_ai(text: str):
     """
-    Process text with OpenAI to extract structured recipe
+    Fallback: Process text with OpenAI to extract structured recipe
     """
+    logger.info(f"📝 Starting text-only AI processing with {len(text)} characters")
+    
     try:
         client = OpenAI()
         
-        # Simple JSON schema - nur Zutaten und Schritte
-        recipe_schema = {
-            "type": "object",
-            "properties": {
-                "ingredients": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "description": "Liste der Zutaten mit Mengenangaben (z.B. 'Mehl, 250g')"
-                },
-                "steps": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "description": "Schritt-für-Schritt Anleitung"
-                }
-            },
-            "required": ["ingredients", "steps"]
-        }
+        if not text or len(text.strip()) < 10:
+            logger.warning("⚠️ Text too short or empty for meaningful processing")
+            return {
+                "title": "Untitled Recipe",
+                "ingredients": [],
+                "steps": ["Text zu kurz oder leer für Rezept-Extraktion"]
+            }
         
+        logger.info(f"🚀 Sending text to OpenAI gpt-4o-mini...")
         response = client.chat.completions.create(
-            model="gpt-4o-mini",  # Better model for structured output
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system", 
-                    "content": """Du extrahierst nur Zutaten und Schritte aus Rezept-Texten.
+                    "content": """Du bist ein Rezept-Experte. Extrahiere aus dem gegebenen Text ein strukturiertes Rezept. 
                     
-                    Regeln:
-                    - Zutaten: Liste mit Mengenangaben (z.B. "Mehl, 250g", "Eier, 2 Stück")
-                    - Schritte: Klare Anweisungen in der richtigen Reihenfolge
-                    - Nur diese beiden Felder zurückgeben"""
+Wenn der Text ein Rezept enthält, extrahiere:
+                    - Einen beschreibenden Titel
+                    - Alle Zutaten mit Mengenangaben
+                    - Schritt-für-Schritt Anweisungen
+                    
+                    Wenn kein klares Rezept erkennbar ist, erstelle basierend auf der Beschreibung ein plausibles Rezept.
+                    
+                    Antworte nur mit JSON: {\"title\": \"Aussagekräftiger Titel\", \"ingredients\": [\"Zutat mit Menge\"], \"steps\": [\"Detaillierter Schritt\"]}"""
                 },
                 {
                     "role": "user", 
-                    "content": f"Extrahiere nur Zutaten und Schritte aus: {text}"
+                    "content": f"Extrahiere oder rekonstruiere ein Rezept aus folgendem Text:\n\n{text[:2000]}"
                 }
             ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "recipe_extraction",
-                    "schema": recipe_schema
-                }
-            },
-            max_tokens=1000
+            max_tokens=1500,
+            temperature=0.3
         )
         
-        # Parse the JSON response
-        recipe_json = json.loads(response.choices[0].message.content)
+        content = response.choices[0].message.content.strip()
+        logger.info(f"💬 Text-only response: {len(content)} chars")
         
-        # Validate with Pydantic model
-        recipe = SimpleRecipeResponse(**recipe_json)
-        
-        return recipe.model_dump()
+        try:
+            # Try parsing the JSON
+            if content.startswith('{'):
+                recipe = json.loads(content)
+            else:
+                # Extract JSON from response
+                import re
+                json_match = re.search(r'{.*?}', content, re.DOTALL)
+                if json_match:
+                    recipe = json.loads(json_match.group(0))
+                else:
+                    raise ValueError("No JSON found in response")
+            
+            logger.info(f"✅ Text-only processing successful: {recipe.get('title', 'N/A')}")
+            return recipe
+            
+        except (json.JSONDecodeError, ValueError) as parse_error:
+            logger.error(f"❌ JSON parsing failed in text fallback: {parse_error}")
+            logger.error(f"💬 Raw response: {content}")
+            return {
+                "title": "Untitled Recipe",
+                "ingredients": [],
+                "steps": ["Konnte kein strukturiertes Rezept aus Text extrahieren"]
+            }
         
     except Exception as e:
-        # Return error in simple format
+        logger.error(f"❌ Text-only processing failed: {e}")
         return {
+            "title": "Untitled Recipe",
             "ingredients": [],
-            "steps": [f"Fehler beim Verarbeiten mit AI: {str(e)}"]
+            "steps": [f"Fehler bei Text-Verarbeitung: {str(e)}"]
         }
 
 @celery_app.task
@@ -241,8 +722,10 @@ def long_running_task(duration: int = 10):
     """
     Example long-running task for testing
     """
+    logger.info(f"🕰️ Starting test task for {duration} seconds")
     for i in range(duration):
         time.sleep(1)
-        print(f"Task progress: {i+1}/{duration}")
+        logger.info(f"📈 Task progress: {i+1}/{duration}")
     
+    logger.info("✅ Test task completed")
     return f"Task completed after {duration} seconds"

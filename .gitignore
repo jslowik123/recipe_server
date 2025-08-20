@@ -39,8 +39,20 @@ ENV/
 # macOS
 .DS_Store
 
-# Logs
+# Logs (disabled log file creation)
 *.log
+
+# Temporary Files  
+extraction_result_*.json
+*.tmp
+test_tracking.py
+
+# Tracking Data (optional - uncomment to exclude)
+# recipe_extraction_tracking.xlsx
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
 
 # Docker
 .dockerignore
