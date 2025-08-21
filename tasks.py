@@ -489,7 +489,7 @@ Antworte mit JSON: {{"title": "Kurzer Rezept-Titel", "ingredients": ["konkrete Z
                 })
         
         start_time = time.time()
-        model_used = "gpt--mini"
+        model_used = "gpt-4o-mini"
         
         logger.info(f"🚀 Sending request to OpenAI {model_used}...")
         logger.info(f"📊 Request contains: {len(user_content)} content items")
