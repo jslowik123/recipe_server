@@ -717,15 +717,3 @@ Wenn der Text ein Rezept enthält, extrahiere:
             "steps": [f"Fehler bei Text-Verarbeitung: {str(e)}"]
         }
 
-@celery_app.task
-def long_running_task(duration: int = 10):
-    """
-    Example long-running task for testing
-    """
-    logger.info(f"🕰️ Starting test task for {duration} seconds")
-    for i in range(duration):
-        time.sleep(1)
-        logger.info(f"📈 Task progress: {i+1}/{duration}")
-    
-    logger.info("✅ Test task completed")
-    return f"Task completed after {duration} seconds"

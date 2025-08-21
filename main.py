@@ -1,29 +1,65 @@
 import fastapi
 import uvicorn
-from fastapi import BackgroundTasks, HTTPException
+from fastapi import BackgroundTasks, HTTPException, Depends, status
 from pydantic import BaseModel
 from typing import List, Optional
-from tasks import scrape_tiktok_async, long_running_task, celery_app
+from tasks import scrape_tiktok_async,celery_app
 import os
 from dotenv import load_dotenv
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import jwt, JWTError
+
 
 # Load environment variables
 load_dotenv()
 
 
 app = fastapi.FastAPI(title="Apify TikTok Scraper with Redis", version="1.0.0")
-
+security = HTTPBearer()
 # Pydantic Models
 class TikTokScrapeRequest(BaseModel):
     url: str
-
-
 
 class TaskResponse(BaseModel):
     task_id: str
     status: str
     message: str
 
+async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
+    if not SUPABASE_JWT_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="JWT Secret nicht konfiguriert",
+        )
+    token = credentials.credentials
+    try:
+        # JWT verifizieren
+        payload = jwt.decode(
+            token,
+            SUPABASE_JWT_SECRET,
+            algorithms=["HS256"],
+            audience="authenticated",  # Muss mit Supabase übereinstimmen
+        )
+        user_id = payload.get("sub")  # Enthält die Supabase User-ID
+        if user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Ungültiger Token",
+            )
+        return user_id
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token ist abgelaufen",
+        )
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Ungültiger Token",
+        )
+    
+    
 @app.get("/")
 def read_root():
     return {"message": "Apify TikTok Scraper with Redis Queue", "redis_connected": check_redis_connection()}
@@ -36,29 +72,13 @@ def health_check():
         "services": ["web", "redis", "worker"]
     }
 
-@app.get("/debug/env")
-def debug_env():
-    """
-    Debug endpoint to check environment variables (without exposing secrets)
-    """
-    apify_token = os.getenv('APIFY_API_TOKEN') or os.getenv('APIFY_API_KEY')
-    return {
-        "redis_url_set": bool(os.getenv('REDIS_URL')),
-        "apify_token_set": bool(apify_token),
-        "apify_key_set": bool(os.getenv('APIFY_API_KEY')),  # Legacy check
-        "openai_key_set": bool(os.getenv('OPENAI_API_KEY')),
-        "apify_token_length": len(apify_token or ''),
-        "apify_token_preview": (
-            f"{apify_token[:8]}..." if apify_token else "Not set"
-        )
-    }
-
 @app.post("/scrape/async", response_model=TaskResponse)
-def scrape_tiktok_videos_async(request: TikTokScrapeRequest):
+def scrape_tiktok_videos_async(request: TikTokScrapeRequest,user_id: str = Depends(verify_token)):
     """
     Start asynchronous TikTok scraping task for a single URL
     """
     try:
+        
         # Validate URL
         if not request.url or not request.url.strip():
             raise HTTPException(status_code=422, detail="URL is required and cannot be empty")
@@ -78,7 +98,7 @@ def scrape_tiktok_videos_async(request: TikTokScrapeRequest):
 
 
 @app.get("/task/{task_id}")
-def get_task_status(task_id: str):
+def get_task_status(task_id: str, user_id: str = Depends(verify_token)):
     """
     Get the status and result of a task
     """
@@ -147,19 +167,8 @@ def get_task_status(task_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get task status: {str(e)}")
 
-@app.post("/test/long-task")
-def start_long_task(duration: int = 10):
-    """
-    Start a test long-running task
-    """
-    task = long_running_task.delay(duration)
-    return {
-        "task_id": task.id,
-        "message": f"Started {duration}s test task. Use /task/{task.id} to check progress."
-    }
-
 @app.get("/tasks/active")
-def get_active_tasks():
+def get_active_tasks(user_id: str = Depends(verify_token)):
     """
     Get list of active tasks
     """

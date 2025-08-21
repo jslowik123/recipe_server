@@ -10,3 +10,4 @@ flower
 opencv-python-headless
 pandas
 openpyxl
+python-jose[cryptography]
