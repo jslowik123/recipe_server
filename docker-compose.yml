@@ -45,6 +45,19 @@ services:
     volumes:
       - .:/app
     command: celery -A tasks flower
+  
+  nginx:
+    build: 
+      context: .
+      dockerfile: Dockerfile.nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro  # Mount Zertifikate vom Host
+    depends_on:
+      - web
+    restart: always
 
 volumes:
   redis_data:

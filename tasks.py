@@ -25,17 +25,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Import tracking
-try:
-    from tracking import tracker, calculate_openai_cost
-except ImportError:
-    # Fallback if tracking not available
-    class DummyTracker:
-        def track_request(self, **kwargs):
-            pass
-    tracker = DummyTracker()
-    def calculate_openai_cost(*args, **kwargs):
-        return 0.0
 
 # Load environment variables
 load_dotenv()
@@ -350,20 +339,6 @@ def scrape_tiktok_async(self, post_url: str):
                 
                 break  # Only process first item since we're handling single URL
             
-        # Track successful task completion
-        try:
-            tracker.track_request(
-                url=post_url,
-                task_id=self.request.id,
-                success=True,
-                frames_count=len(frames) if 'frames' in locals() else 0,
-                model_used="task_completion",
-                ingredients_count=len(video_data.get('processed_recipe', {}).get('ingredients', [])),
-                steps_count=len(video_data.get('processed_recipe', {}).get('steps', [])),
-                raw_response=video_data.get('processed_recipe', {})
-            )
-        except Exception as track_error:
-            logger.error(f"❌ Task tracking error: {track_error}")
 
         return {
             'status': 'SUCCESS',
@@ -378,17 +353,6 @@ def scrape_tiktok_async(self, post_url: str):
         logger.error(f"❌ Scraping failed for {post_url}: {exc}")
         logger.error(f"📋 Full traceback: {traceback.format_exc()}")
         
-        # Track failed task
-        try:
-            tracker.track_request(
-                url=post_url,
-                task_id=self.request.id,
-                success=False,
-                model_used="task_failure",
-                error_message=str(exc)
-            )
-        except Exception as track_error:
-            logger.error(f"❌ Failed task tracking error: {track_error}")
         
         self.update_state(
             state=states.FAILURE,
@@ -539,8 +503,6 @@ Antworte IMMER mit vollständigem JSON: {"title": "Kurzer, aussagekräftiger Rez
         completion_tokens = usage.completion_tokens if usage else 0
         total_tokens = usage.total_tokens if usage else 0
         
-        # Calculate cost
-        cost_estimate = calculate_openai_cost(prompt_tokens, completion_tokens, model_used)
         
         content = response.choices[0].message.content.strip()
         logger.info(f"💬 OpenAI response length: {len(content)} characters")
@@ -594,26 +556,7 @@ Antworte IMMER mit vollständigem JSON: {"title": "Kurzer, aussagekräftiger Rez
         # Log final recipe structure
         logger.info(f"🍽️ Final recipe: Title='{recipe_json.get('title', 'N/A')}', Ingredients={len(recipe_json.get('ingredients', []))}, Steps={len(recipe_json.get('steps', []))}")
         
-        # Track the request
-        try:
-            tracker.track_request(
-                url=url,
-                task_id=task_id,
-                frames_count=len(frames) if frames else 0,
-                model_used=model_used,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=total_tokens,
-                cost_estimate=cost_estimate,
-                processing_time=processing_time,
-                ingredients_count=len(recipe_json.get("ingredients", [])),
-                steps_count=len(recipe_json.get("steps", [])),
-                success=True,
-                raw_response=recipe_json
-            )
-            logger.info(f"📊 Tracking successful - Cost: ${cost_estimate:.4f}, Tokens: {total_tokens}")
-        except Exception as track_error:
-            logger.error(f"❌ Tracking error: {track_error}")
+        logger.info(f"📊 Processing successful - Tokens: {total_tokens}")
             
         return recipe_json
         
@@ -621,18 +564,6 @@ Antworte IMMER mit vollständigem JSON: {"title": "Kurzer, aussagekräftiger Rez
         logger.error(f"❌ OpenAI processing failed: {e}")
         logger.error(f"📋 Traceback: {traceback.format_exc()}")
         
-        # Try to track the failed request
-        try:
-            tracker.track_request(
-                url=url,
-                task_id=task_id,
-                frames_count=len(frames) if frames else 0,
-                model_used="gpt-4o-mini",
-                success=False,
-                error_message=str(e)
-            )
-        except:
-            pass
         
         # Fallback to text-only processing
         logger.info("🔄 Attempting fallback to text-only processing...")
