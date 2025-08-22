@@ -8,4 +8,4 @@ celery[redis]
 redis
 flower
 opencv-python-headless
-python-jose[cryptography]
+python-jose
