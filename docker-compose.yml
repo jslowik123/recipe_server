@@ -4,12 +4,12 @@ services:
   # FastAPI App
   web:
     build: .
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"  # Intern für Nginx
     depends_on:
       - redis
     environment:
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=${REDIS_URL}  # Nutzt Umgebungsvariable
     volumes:
       - .:/app
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
@@ -17,10 +17,10 @@ services:
   # Redis für Task Queue
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    command: redis-server --bind 127.0.0.1 --protected-mode yes --requirepass ${REDIS_PASSWORD}  # Passwort aus Umgebung
     volumes:
       - redis_data:/data
+    # Keine ports, nur internes Netzwerk
 
   # Celery Worker für asynchrone Tasks
   worker:
@@ -28,7 +28,7 @@ services:
     depends_on:
       - redis
     environment:
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=${REDIS_URL}  # Nutzt Umgebungsvariable
     volumes:
       - .:/app
     command: celery -A tasks worker --loglevel=info
@@ -37,27 +37,32 @@ services:
   flower:
     build: .
     ports:
-      - "5555:5555"
+      - "5555:5555"  # Öffentlich für Monitoring
     depends_on:
       - redis
     environment:
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=${REDIS_URL_WITH_PASSWORD}  # Nutzt Umgebungsvariable mit Passwort
     volumes:
       - .:/app
     command: celery -A tasks flower
-  
+
+  # Nginx als Reverse Proxy
   nginx:
-    build: 
+    build:
       context: .
       dockerfile: Dockerfile.nginx
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - /etc/letsencrypt:/etc/letsencrypt:ro  # Mount Zertifikate vom Host
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - web
     restart: always
+
+networks:
+  app-network:
+    driver: bridge
 
 volumes:
   redis_data:
