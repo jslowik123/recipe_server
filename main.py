@@ -8,6 +8,7 @@ import os
 from dotenv import load_dotenv
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
+from datetime import datetime
 
 
 # Load environment variables
@@ -151,37 +152,31 @@ def get_task_status(task_id: str, user_id: str = Depends(verify_token)):
         elif task_result.state == 'SUCCESS':
             result = task_result.result
             
-            # Simplified response format with status field
+            # Clean, simple response format for Flutter
             if result and isinstance(result, dict):
                 video_result = result.get('result', {})
                 recipe = video_result.get('processed_recipe')
                 
                 return {
-                    "task_id": task_id,
-                    "status": "SUCCESS",
-                    "result": {
-                        "url": result.get('url', ''),
-                        "title": recipe.get('title', 'Untitled Recipe') if recipe else 'Untitled Recipe',
-                        "ingredients": recipe.get('ingredients', []) if recipe else [],
-                        "steps": recipe.get('steps', []) if recipe else [],
-                        "text": video_result.get('text', ''),
-                        "has_subtitles": result.get('has_subtitles', False),
-                        "result": video_result
-                    }
+                    "id": task_id,
+                    "name": recipe.get('title', 'Untitled Recipe') if recipe else 'Untitled Recipe',
+                    "description": recipe.get('title', 'Extracted recipe from TikTok') if recipe else 'Extracted recipe from TikTok',
+                    "original_link": result.get('url', ''),
+                    "ingredients": recipe.get('ingredients', []) if recipe else [],
+                    "steps": recipe.get('steps', []) if recipe else [],
+                    "user_id": user_id,
+                    "created_at": datetime.utcnow().isoformat() + "Z"
                 }
             
             return {
-                "task_id": task_id,
-                "status": "SUCCESS",
-                "result": {
-                    "url": "",
-                    "title": "Untitled Recipe",
-                    "ingredients": [],
-                    "steps": [],
-                    "text": "",
-                    "has_subtitles": False,
-                    "result": {}
-                }
+                "id": task_id,
+                "name": "Untitled Recipe",
+                "description": "Extracted recipe from TikTok",
+                "original_link": "",
+                "ingredients": [],
+                "steps": [],
+                "user_id": user_id,
+                "created_at": datetime.utcnow().isoformat() + "Z"
             }
         else:  # FAILURE
             return {
