@@ -9,3 +9,4 @@ redis
 flower
 opencv-python-headless
 python-jose
+gevent

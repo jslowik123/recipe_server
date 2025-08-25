@@ -34,7 +34,7 @@ services:
       - REDIS_URL=${REDIS_URL_WITH_PASSWORD}
     volumes:
       - .:/app
-    command: celery -A tasks worker --loglevel=info
+    command: celery -A tasks worker --loglevel=info --pool=gevent --concurrency=20
     networks:
       - app-network
 
