@@ -1,0 +1,27 @@
+name: Simple Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main  # Trigger bei Push auf main; passe an, falls nötig
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          script: |
+            cd ${{ secrets.REPO_PATH }}
+            docker compose down
+            git pull origin main
+            docker compose build --no-cache
+            docker compose up -d
