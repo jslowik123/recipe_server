@@ -3,7 +3,7 @@ name: Simple Deploy to VPS
 on:
   push:
     branches:
-      - main  # Trigger bei Push auf main; passe an, falls nötig
+      - main
 
 jobs:
   deploy:
@@ -13,13 +13,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
-          password: ${{ secrets.SSH_PASSWORD }}
+          debug: true
           script: |
+            whoami
+            pwd
             cd ${{ secrets.REPO_PATH }}
             docker compose down
             git pull origin main
