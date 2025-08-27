@@ -25,7 +25,10 @@ jobs:
           debug: true
           script: |
             cd ${{ secrets.REPO_PATH }}
-            docker compose down
+            # Konfiguriere Git für die Authentifizierung
+            git config --global credential.helper store
+            echo "https://${{ secrets.ACCESS_TOKEN }}:x-oauth-basic@github.com" > ~/.git-credentials
             git pull origin main
+            docker compose down
             docker compose build --no-cache
             docker compose up -d
