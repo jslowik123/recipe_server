@@ -143,7 +143,7 @@ def get_task_status(task_id: str, user_id: str = Depends(verify_token)):
                 "task_id": task_id,
                 "status": "PROGRESS",
                 "step": progress_info.get('step', 0),
-                "total_steps": progress_info.get('total_steps', 1),
+                "total_steps": 5,
                 "current_status": progress_info.get('status', 'Processing...'),
                 "details": progress_info.get('details', ''),
                 "url": progress_info.get('url', ''),

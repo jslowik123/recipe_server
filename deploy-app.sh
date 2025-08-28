@@ -23,7 +23,7 @@ echo "⏳ Waiting for app to be ready..."
 sleep 15
 
 # Health Check
-if curl -f http://localhost/health > /dev/null 2>&1; then
+if curl -f https://${MAIN_DOMAIN}/health > /dev/null 2>&1; then
     echo "✅ App deployed successfully!"
     
     # Cleanup alte Images
