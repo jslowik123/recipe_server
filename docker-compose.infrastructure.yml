@@ -12,6 +12,8 @@ services:
       - nginx-vhost:/etc/nginx/vhost.d
       - nginx-html:/usr/share/nginx/html
       - ./nginx-custom.conf:/etc/nginx/conf.d/custom.conf:ro
+    labels:
+      - "com.github.nginx-proxy.nginx"
     restart: unless-stopped
     networks:
       - proxy-network
@@ -28,6 +30,7 @@ services:
       - nginx-acme:/etc/acme.sh
     environment:
       - DEFAULT_EMAIL=${LETSENCRYPT_EMAIL}
+      - NGINX_PROXY_CONTAINER=nginx-proxy
     depends_on:
       - nginx
     restart: unless-stopped
