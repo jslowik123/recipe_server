@@ -1,0 +1,99 @@
+services:
+  # FastAPI App
+  web:
+    build: .
+    container_name: apify-web
+    expose:
+      - "8000"
+    environment:
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis-server:6379/0
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - APIFY_API_TOKEN=${APIFY_API_TOKEN}
+      - APIFY_API_KEY=${APIFY_API_KEY}
+      - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET}
+      - VIRTUAL_HOST=${MAIN_DOMAIN},www.${MAIN_DOMAIN}
+      - VIRTUAL_PORT=8000
+      - LETSENCRYPT_HOST=${MAIN_DOMAIN},www.${MAIN_DOMAIN}
+      - LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL}
+    volumes:
+      - .:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    restart: unless-stopped
+    depends_on:
+      - redis-check
+    networks:
+      - proxy-network
+      - app-network
+
+  # Celery Worker
+  worker:
+    build: .
+    container_name: apify-worker
+    environment:
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis-server:6379/0
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - APIFY_API_TOKEN=${APIFY_API_TOKEN}
+      - APIFY_API_KEY=${APIFY_API_KEY}
+    volumes:
+      - .:/app
+    command: celery -A tasks worker --loglevel=info --pool=gevent --concurrency=20
+    restart: unless-stopped
+    depends_on:
+      - redis-check
+    networks:
+      - app-network
+
+  # Flower Monitoring
+  flower:
+    build: .
+    container_name: apify-flower
+    expose:
+      - "5555"
+    environment:
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis-server:6379/0
+      - VIRTUAL_HOST=flower.${MAIN_DOMAIN}
+      - VIRTUAL_PORT=5555
+      - LETSENCRYPT_HOST=flower.${MAIN_DOMAIN}
+      - LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL}
+    volumes:
+      - .:/app
+    command: celery -A tasks flower
+    restart: unless-stopped
+    depends_on:
+      - redis-check
+    networks:
+      - proxy-network
+      - app-network
+
+  # Redis Health Check (wartet bis Redis bereit ist)
+  redis-check:
+    image: redis:7-alpine
+    container_name: redis-check
+    command: >
+      sh -c "
+        until redis-cli -h redis-server -p 6379 -a $$REDIS_PASSWORD ping; do
+          echo 'Waiting for Redis...'
+          sleep 2
+        done
+        echo 'Redis is ready!'
+      "
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    networks:
+      - app-network
+    depends_on:
+      - external-redis
+
+  # Externe Redis-Referenz (läuft in Infrastructure)
+  external-redis:
+    image: tianon/true
+    external_links:
+      - redis-server:redis-server
+
+networks:
+  proxy-network:
+    name: proxy-network
+    external: true
+  app-network:
+    name: app-network
+    external: true
