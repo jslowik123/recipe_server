@@ -140,7 +140,7 @@ celery_app.conf.update(
 )
 
 @celery_app.task(bind=True)
-def scrape_tiktok_async(self, post_url: str):
+def scrape_tiktok_async(self, post_url: str, language: str):
     """
     Asynchronously scrape a single TikTok video and optionally process with AI
     """
@@ -332,7 +332,9 @@ def scrape_tiktok_async(self, post_url: str):
                     subtitles=video_data.get("subtitles", ""),
                     frames=frames,
                     url=post_url,
-                    task_id=self.request.id
+                    task_id=self.request.id,
+                    language=language
+
                 )
                 
                 logger.info(f"✅ AI processing completed for {post_url}")
@@ -367,7 +369,7 @@ def scrape_tiktok_async(self, post_url: str):
         )
         raise Ignore()
 
-def process_video_with_openai(text: str = "", subtitles: str = "", frames: List[str] = None, url: str = "", task_id: str = ""):
+def process_video_with_openai(text: str = "", subtitles: str = "", frames: List[str] = None, url: str = "", task_id: str = "", language: str = ""):
     """
     Process video frames and text with OpenAI for recipe extraction
     """
@@ -407,9 +409,29 @@ def process_video_with_openai(text: str = "", subtitles: str = "", frames: List[
         user_content = []
         
         if combined_text:
-            user_content.append({
-                "type": "text",
-                "text": f"""Rekonstruiere das komplette Rezept aus folgenden Informationen:
+            # Language-specific prompts
+            if language.lower() == "en":
+                prompt_text = f"""Reconstruct the complete recipe from the following information:
+
+{combined_text}
+
+DETAILED ANALYSIS OF ALL VIDEO FRAMES:
+Analyze each of the {len(frames)} images individually:
+- What do you see in image 1, 2, 3, etc.?
+- Which ingredients are visible?
+- Which cooking steps are shown?
+- What quantities can you estimate?
+- Which techniques are being used?
+
+Reconstruct a complete, cookable recipe with:
+- A descriptive title (e.g., "Creamy Pasta Carbonara" or "Quick Vegetable Stir-fry")
+- Specific ingredients with realistic quantities
+- Detailed preparation steps
+- Add missing but necessary steps
+
+Respond with complete JSON: {{"title": "Short, descriptive recipe title", "ingredients": ["specific ingredient with quantity"], "steps": ["detailed step with times/temperatures"]}}"""
+            else:  # German (default)
+                prompt_text = f"""Rekonstruiere das komplette Rezept aus folgenden Informationen:
 
 {combined_text}
 
@@ -428,6 +450,10 @@ Rekonstruiere daraus ein vollständiges, kochbares Rezept mit:
 - Ergänze fehlende aber notwendige Schritte
 
 Antworte mit vollständigem JSON: {{"title": "Kurzer, aussagekräftiger Rezept-Titel", "ingredients": ["konkrete Zutat mit Menge"], "steps": ["detaillierter Schritt mit Zeiten/Temperaturen"]}}"""
+
+            user_content.append({
+                "type": "text",
+                "text": prompt_text
             })
         else:
             user_content.append({
@@ -464,7 +490,7 @@ Antworte mit JSON: {{"title": "Kurzer Rezept-Titel", "ingredients": ["konkrete Z
                 messages=[
                     {
                         "role": "system",
-                        "content": """Du bist ein erfahrener Koch und Rezept-Experte. Analysiere JEDES einzelne Video-Frame detailliert und rekonstruiere das komplette Rezept.
+                        "content": f"""Du bist ein erfahrener Koch und Rezept-Experte. Analysiere JEDES einzelne Video-Frame detailliert und rekonstruiere das komplette Rezept. Antworte in {"English" if language == "en" else "deutscher"} Sprache.
 
 WICHTIGE REGELN:
 1. Schaue dir JEDES Bild genau an - analysiere Zutaten, Mengen, Kochgeschirr, Techniken
@@ -480,7 +506,7 @@ BEISPIEL für "Lasagne":
 - Ergänze typische Mengen und Zubereitungszeiten
 - Gib konkrete, umsetzbare Schritte
 
-Antworte IMMER mit vollständigem JSON: {"title": "Kurzer, aussagekräftiger Rezept-Titel", "ingredients": ["konkrete Zutat mit Menge", ...], "steps": ["detaillierter Schritt", ...]}"""
+Antworte IMMER mit vollständigem JSON: {{"title": "Kurzer, aussagekräftiger Rezept-Titel", "ingredients": ["konkrete Zutat mit Menge", ...], "steps": ["detaillierter Schritt", ...]}}"""
                     },
                     {
                         "role": "user",
@@ -567,9 +593,9 @@ Antworte IMMER mit vollständigem JSON: {"title": "Kurzer, aussagekräftiger Rez
         
         # Fallback to text-only processing
         logger.info("🔄 Attempting fallback to text-only processing...")
-        return process_text_with_ai(text or subtitles)
+        return process_text_with_ai(text or subtitles, language)
 
-def process_text_with_ai(text: str):
+def process_text_with_ai(text: str, language: str = ""):
     """
     Fallback: Process text with OpenAI to extract structured recipe
     """
@@ -592,7 +618,7 @@ def process_text_with_ai(text: str):
             messages=[
                 {
                     "role": "system", 
-                    "content": """Du bist ein Rezept-Experte. Extrahiere aus dem gegebenen Text ein strukturiertes Rezept. 
+                    "content": f"""Du bist ein Rezept-Experte. Extrahiere aus dem gegebenen Text ein strukturiertes Rezept. Antworte in {"English" if language == "en" else "deutscher"} Sprache.
                     
 Wenn der Text ein Rezept enthält, extrahiere:
                     - Einen beschreibenden Titel
@@ -601,7 +627,7 @@ Wenn der Text ein Rezept enthält, extrahiere:
                     
                     Wenn kein klares Rezept erkennbar ist, erstelle basierend auf der Beschreibung ein plausibles Rezept.
                     
-                    Antworte nur mit JSON: {\"title\": \"Aussagekräftiger Titel\", \"ingredients\": [\"Zutat mit Menge\"], \"steps\": [\"Detaillierter Schritt\"]}"""
+                    Antworte nur mit JSON: {{\"title\": \"Aussagekräftiger Titel\", \"ingredients\": [\"Zutat mit Menge\"], \"steps\": [\"Detaillierter Schritt\"]}}"""
                 },
                 {
                     "role": "user", 

@@ -20,6 +20,7 @@ security = HTTPBearer()
 # Pydantic Models
 class TikTokScrapeRequest(BaseModel):
     url: str
+    language: str
 
 class TaskResponse(BaseModel):
     task_id: str
@@ -110,7 +111,7 @@ def scrape_tiktok_videos_async(request: TikTokScrapeRequest,user_id: str = Depen
             raise HTTPException(status_code=422, detail="URL is required and cannot be empty")
         
         # Start the async task
-        task = scrape_tiktok_async.delay(request.url.strip())
+        task = scrape_tiktok_async.delay(request.url.strip(), request.language)
         
         return TaskResponse(
             task_id=task.id,
