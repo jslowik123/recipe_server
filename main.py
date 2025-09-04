@@ -3,16 +3,11 @@ import uvicorn
 from fastapi import BackgroundTasks, HTTPException, Depends, status
 from pydantic import BaseModel
 from typing import List, Optional
-from tasks import scrape_tiktok_async,celery_app
-import os
-from dotenv import load_dotenv
+from tasks import scrape_tiktok_async, celery_app
+from config import config
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from datetime import datetime
-
-
-# Load environment variables
-load_dotenv()
 
 
 app = fastapi.FastAPI(title="Apify TikTok Scraper with Redis", version="1.0.0")
@@ -28,18 +23,20 @@ class TaskResponse(BaseModel):
     message: str
 
 async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
-    if not SUPABASE_JWT_SECRET:
+    try:
+        jwt_secret = config.supabase_jwt_secret
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="JWT Secret nicht konfiguriert",
         )
+    
     token = credentials.credentials
     try:
         # JWT verifizieren
         payload = jwt.decode(
             token,
-            SUPABASE_JWT_SECRET,
+            jwt_secret,
             algorithms=["HS256"],
             audience="authenticated",  # Muss mit Supabase übereinstimmen
         )
@@ -206,8 +203,7 @@ def check_redis_connection():
     """
     try:
         import redis
-        redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-        r = redis.from_url(redis_url)
+        r = redis.from_url(config.redis_url)
         r.ping()
         return True
     except:
