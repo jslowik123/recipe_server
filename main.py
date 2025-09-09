@@ -1,5 +1,6 @@
 import fastapi
 import uvicorn
+import logging
 from fastapi import BackgroundTasks, HTTPException, Depends, status
 from pydantic import BaseModel
 from typing import List, Optional
@@ -8,6 +9,8 @@ from config import config
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 app = fastapi.FastAPI(title="Apify TikTok Scraper with Redis", version="1.0.0")
@@ -21,6 +24,7 @@ class TaskResponse(BaseModel):
     task_id: str
     status: str
     message: str
+
 
 async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:

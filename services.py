@@ -8,6 +8,9 @@ import base64
 import tempfile
 import traceback
 import logging
+import asyncio
+import aiohttp
+import aiofiles
 from typing import List, Dict, Any, Optional
 
 import cv2
@@ -20,6 +23,7 @@ from exceptions import (
     ApifyError, OpenAIError, VideoProcessingError, 
     VideoDownloadError, FrameExtractionError
 )
+from prompt_service import prompt_service
 
 logger = logging.getLogger(__name__)
 
@@ -183,31 +187,127 @@ class VideoProcessor:
             
             logger.info(f"📊 Video info: {total_frames} frames, {fps:.1f} FPS, {duration:.1f}s duration")
             
-            # Extract frames evenly distributed across video
-            frame_interval = max(1, total_frames // self.max_frames)
-            logger.info(f"🔢 Extracting every {frame_interval}th frame (max {self.max_frames} frames)")
-            
-            while cap.isOpened() and len(frames) < self.max_frames:
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                
-                if frame_count % frame_interval == 0:
-                    # Resize frame to reduce size
-                    resized = cv2.resize(frame, (256, 144))
-                    _, buffer = cv2.imencode(".jpg", resized, [cv2.IMWRITE_JPEG_QUALITY, 60])
-                    base64_frame = base64.b64encode(buffer).decode("utf-8")
-                    frames.append(base64_frame)
-                    
-                    logger.debug(f"🖼️ Extracted frame {len(frames)}/{self.max_frames}")
-                
-                frame_count += 1
-            
-            logger.info(f"✅ Successfully extracted {len(frames)} frames from video")
-            return frames
+            # Intelligent frame extraction for cooking videos
+            frames = self._extract_frames_intelligently(cap, total_frames, fps, duration)
             
         finally:
             cap.release()
+            
+        return frames
+    
+    def _extract_frames_intelligently(self, cap, total_frames: int, fps: float, duration: float) -> List[str]:
+        """
+        Extract frames optimized for cooking videos
+        """
+        frames = []
+        
+        # Skip very beginning and end (often intro/outro)
+        skip_start_percent = 0.05  # Skip first 5%
+        skip_end_percent = 0.05    # Skip last 5%
+        
+        start_frame = int(total_frames * skip_start_percent)
+        end_frame = int(total_frames * (1 - skip_end_percent))
+        useful_frames = end_frame - start_frame
+        
+        logger.info(f"🎯 Intelligent extraction: frames {start_frame}-{end_frame} (skipping intro/outro)")
+        
+        if duration <= 30:
+            # Short videos: more dense sampling
+            frame_positions = self._get_dense_frame_positions(start_frame, end_frame, self.max_frames)
+            logger.info(f"📹 Short video ({duration:.1f}s): dense sampling")
+        elif duration <= 120:
+            # Medium videos: focus on middle sections  
+            frame_positions = self._get_cooking_focused_positions(start_frame, end_frame, duration, fps, self.max_frames)
+            logger.info(f"👨‍🍳 Medium video ({duration:.1f}s): cooking-focused sampling")
+        else:
+            # Long videos: strategic sampling with more middle focus
+            frame_positions = self._get_strategic_long_video_positions(start_frame, end_frame, self.max_frames)
+            logger.info(f"⏳ Long video ({duration:.1f}s): strategic sampling")
+        
+        # Extract frames at calculated positions
+        frame_count = 0
+        for target_position in sorted(frame_positions):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, target_position)
+            ret, frame = cap.read()
+            
+            if ret and len(frames) < self.max_frames:
+                resized = cv2.resize(frame, (256, 144))
+                _, buffer = cv2.imencode(".jpg", resized, [cv2.IMWRITE_JPEG_QUALITY, 60])
+                base64_frame = base64.b64encode(buffer).decode("utf-8")
+                frames.append(base64_frame)
+                
+                timestamp = target_position / fps if fps > 0 else target_position
+                logger.debug(f"🖼️ Extracted frame {len(frames)}/{self.max_frames} at {timestamp:.1f}s")
+        
+        logger.info(f"✅ Intelligent extraction completed: {len(frames)} frames")
+        return frames
+    
+    def _get_dense_frame_positions(self, start_frame: int, end_frame: int, max_frames: int) -> List[int]:
+        """Dense, evenly distributed sampling for short videos"""
+        useful_frames = end_frame - start_frame
+        interval = max(1, useful_frames // max_frames)
+        
+        return [start_frame + i * interval for i in range(max_frames) 
+                if start_frame + i * interval < end_frame]
+    
+    def _get_cooking_focused_positions(self, start_frame: int, end_frame: int, duration: float, fps: float, max_frames: int) -> List[int]:
+        """Cooking-focused sampling: more frames in middle where action happens"""
+        positions = []
+        useful_frames = end_frame - start_frame
+        
+        # 20% from first quarter (setup/ingredients)
+        first_quarter_count = max(1, int(max_frames * 0.2))
+        first_quarter_end = start_frame + useful_frames // 4
+        first_quarter_positions = self._get_evenly_spaced_positions(start_frame, first_quarter_end, first_quarter_count)
+        positions.extend(first_quarter_positions)
+        
+        # 60% from middle half (main cooking action)
+        middle_count = max(1, int(max_frames * 0.6))
+        middle_start = start_frame + useful_frames // 4
+        middle_end = start_frame + 3 * useful_frames // 4  
+        middle_positions = self._get_evenly_spaced_positions(middle_start, middle_end, middle_count)
+        positions.extend(middle_positions)
+        
+        # 20% from last quarter (plating/result)
+        last_quarter_count = max(1, max_frames - len(positions))
+        last_quarter_start = start_frame + 3 * useful_frames // 4
+        last_quarter_positions = self._get_evenly_spaced_positions(last_quarter_start, end_frame, last_quarter_count)
+        positions.extend(last_quarter_positions)
+        
+        return positions
+    
+    def _get_strategic_long_video_positions(self, start_frame: int, end_frame: int, max_frames: int) -> List[int]:
+        """Strategic sampling for long videos with emphasis on middle sections"""
+        positions = []
+        useful_frames = end_frame - start_frame
+        
+        # 10% from beginning
+        beginning_count = max(1, int(max_frames * 0.1))
+        beginning_end = start_frame + useful_frames // 10
+        positions.extend(self._get_evenly_spaced_positions(start_frame, beginning_end, beginning_count))
+        
+        # 80% from middle 80%
+        middle_count = max(1, int(max_frames * 0.8))
+        middle_start = start_frame + useful_frames // 10
+        middle_end = start_frame + 9 * useful_frames // 10
+        positions.extend(self._get_evenly_spaced_positions(middle_start, middle_end, middle_count))
+        
+        # 10% from end
+        end_count = max(1, max_frames - len(positions))
+        end_start = start_frame + 9 * useful_frames // 10
+        positions.extend(self._get_evenly_spaced_positions(end_start, end_frame, end_count))
+        
+        return positions
+    
+    def _get_evenly_spaced_positions(self, start: int, end: int, count: int) -> List[int]:
+        """Get evenly spaced frame positions within a range"""
+        if count <= 0 or start >= end:
+            return []
+        if count == 1:
+            return [start + (end - start) // 2]
+        
+        step = (end - start) / (count - 1)
+        return [int(start + i * step) for i in range(count)]
 
 
 class OpenAIService:
@@ -226,6 +326,7 @@ class OpenAIService:
     ) -> Dict[str, Any]:
         """
         Process video content with OpenAI for recipe extraction
+        Intelligently chooses processing strategy based on content quality
         """
         try:
             # Combine text sources
@@ -238,14 +339,25 @@ class OpenAIService:
                 logger.warning("⚠️ No text or frames available for processing")
                 return self._create_fallback_recipe("Keine Daten zum Verarbeiten gefunden")
             
-            # Build message content
-            user_content = self._build_user_content(combined_text, frames, language)
+            # 🚀 INTELLIGENT PROCESSING STRATEGY
+            processing_strategy = self._determine_processing_strategy(combined_text, subtitles, frames)
+            logger.info(f"🧠 Selected processing strategy: {processing_strategy}")
             
-            # Make OpenAI request
-            response = self._make_openai_request(user_content, language)
-            
-            # Process response
-            return self._process_openai_response(response)
+            if processing_strategy == "text_only":
+                # Fast text-only processing for high-quality subtitles
+                return self._process_text_only_optimized(combined_text, language)
+            elif processing_strategy == "reduced_frames":
+                # Reduced frames with good text
+                reduced_frames = frames[:5] if frames else []
+                logger.info(f"📉 Reduced frames from {len(frames) if frames else 0} to {len(reduced_frames)}")
+                user_content = self._build_user_content(combined_text, reduced_frames, language)
+                response = self._make_openai_request(user_content, language)
+                return self._process_openai_response(response)
+            else:
+                # Full processing for poor text quality
+                user_content = self._build_user_content(combined_text, frames, language)
+                response = self._make_openai_request(user_content, language)
+                return self._process_openai_response(response)
             
         except Exception as e:
             logger.error(f"❌ OpenAI processing failed: {e}")
@@ -257,6 +369,162 @@ class OpenAIService:
                 return self._process_text_only(text or subtitles, language)
             
             return self._create_fallback_recipe(f"Fehler bei Verarbeitung: {str(e)}")
+    
+    def _determine_processing_strategy(self, combined_text: str, subtitles: str, frames: List[str]) -> str:
+        """
+        Intelligently determine the best processing strategy based on content quality
+        
+        Returns:
+            "text_only": High-quality subtitles, skip frames for speed
+            "reduced_frames": Good text + few frames for verification  
+            "full_processing": Poor text, need all frames
+        """
+        
+        # No subtitles = need frames
+        if not subtitles or len(subtitles.strip()) < 50:
+            logger.info("🖼️ No good subtitles found, using full frame processing")
+            return "full_processing"
+        
+        # Analyze subtitle quality
+        subtitle_quality_score = self._analyze_subtitle_quality(subtitles)
+        logger.info(f"📊 Subtitle quality score: {subtitle_quality_score}/100")
+        
+        # High quality subtitles (>80) = text only processing
+        if subtitle_quality_score > 80:
+            logger.info("✨ High-quality subtitles detected, using text-only processing")
+            return "text_only" 
+            
+        # Medium quality subtitles (50-80) = reduced frames
+        elif subtitle_quality_score > 50:
+            logger.info("🎯 Medium-quality subtitles, using reduced frames")
+            return "reduced_frames"
+            
+        # Poor quality subtitles (<50) = full processing
+        else:
+            logger.info("🔍 Poor subtitle quality, using full frame processing")  
+            return "full_processing"
+    
+    def _analyze_subtitle_quality(self, subtitles: str) -> int:
+        """
+        Analyze subtitle quality and return score 0-100
+        Higher score = better quality, more suitable for text-only processing
+        """
+        if not subtitles:
+            return 0
+            
+        score = 0
+        
+        # Length check - recipe explanations are usually detailed
+        if len(subtitles) > 200:
+            score += 25
+        elif len(subtitles) > 100:
+            score += 15
+        
+        # Recipe keywords (German/English)
+        recipe_keywords = [
+            # German
+            'zutaten', 'rezept', 'kochen', 'backen', 'mischen', 'rühren', 'teig', 
+            'ofen', 'pfanne', 'topf', 'minuten', 'grad', 'salz', 'pfeffer', 
+            'zwiebel', 'knoblauch', 'öl', 'butter', 'mehl', 'zucker', 'ei',
+            # English  
+            'ingredients', 'recipe', 'cooking', 'baking', 'mix', 'stir', 'dough',
+            'oven', 'pan', 'pot', 'minutes', 'degrees', 'salt', 'pepper',
+            'onion', 'garlic', 'oil', 'butter', 'flour', 'sugar', 'egg'
+        ]
+        
+        keyword_count = sum(1 for keyword in recipe_keywords if keyword.lower() in subtitles.lower())
+        score += min(keyword_count * 5, 30)  # Max 30 points for keywords
+        
+        # Cooking actions/instructions
+        action_keywords = [
+            'hinzufügen', 'vermischen', 'erhitzen', 'braten', 'dünsten', 'würzen',
+            'add', 'mix', 'heat', 'fry', 'sauté', 'season', 'bake', 'boil'
+        ]
+        
+        action_count = sum(1 for action in action_keywords if action.lower() in subtitles.lower())
+        score += min(action_count * 3, 20)  # Max 20 points for actions
+        
+        # Quantity indicators
+        quantity_patterns = [
+            r'\d+\s*(gramm?|g\b)', r'\d+\s*(ml|liter)', r'\d+\s*(tasse|cup)', 
+            r'\d+\s*(löffel|spoon)', r'\d+\s*(stück|piece)', r'\d+\s*minuten?',
+            r'\d+\s*grad', r'prise', 'pinch', 'handful', 'etwas', 'some'
+        ]
+        
+        import re
+        quantity_matches = sum(1 for pattern in quantity_patterns 
+                              if re.search(pattern, subtitles, re.IGNORECASE))
+        score += min(quantity_matches * 4, 25)  # Max 25 points for quantities
+        
+        # Coherence check - avoid fragmented text
+        sentences = subtitles.split('.')
+        avg_sentence_length = sum(len(s.split()) for s in sentences) / max(len(sentences), 1)
+        
+        if avg_sentence_length > 5:  # Good sentence structure
+            score += 10
+        elif avg_sentence_length > 3:
+            score += 5
+            
+        logger.debug(f"Subtitle analysis: length={len(subtitles)}, keywords={keyword_count}, actions={action_count}, quantities={quantity_matches}")
+        
+        return min(score, 100)
+    
+    def _process_text_only_optimized(self, combined_text: str, language: str) -> Dict[str, Any]:
+        """
+        Optimized text-only processing for high-quality subtitles
+        Faster processing with focused prompts
+        """
+        logger.info(f"⚡ Starting optimized text-only processing with {len(combined_text)} characters")
+        
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": self._get_optimized_system_prompt(language)
+                    },
+                    {
+                        "role": "user", 
+                        "content": self._get_optimized_text_prompt(combined_text, language)
+                    }
+                ],
+                temperature=0.2,  # Lower temperature for more focused results
+                max_tokens=1000   # Reduced tokens for faster processing
+            )
+            
+            content = response.choices[0].message.content.strip()
+            logger.info(f"⚡ Text-only processing completed: {len(content)} chars")
+            
+            recipe_json = self._parse_recipe_json(content)
+            recipe_json = self._validate_recipe_structure(recipe_json)
+            
+            return recipe_json
+            
+        except Exception as e:
+            logger.error(f"❌ Optimized text processing failed: {e}")
+            return self._create_fallback_recipe(f"Text-only processing failed: {str(e)}")
+    
+    def _get_optimized_system_prompt(self, language: str) -> str:
+        """Optimized system prompt for text-only processing"""
+        return prompt_service.get_optimized_system_prompt(language)
+    
+    def _get_optimized_text_prompt(self, combined_text: str, language: str) -> str:
+        """Optimized prompt for text-only processing"""
+        language_obj = prompt_service.detect_language(language)
+        
+        if language_obj.value == "en":
+            return f"""Extract a complete recipe from this video transcript:
+
+{combined_text[:1500]}
+
+Create a practical, cookable recipe with specific ingredients and clear steps."""
+        else:
+            return f"""Extrahiere ein vollständiges Rezept aus diesem Video-Transkript:
+
+{combined_text[:1500]}
+
+Erstelle ein praktisches, kochbares Rezept mit konkreten Zutaten und klaren Schritten."""
     
     def _combine_text_sources(self, text: str, subtitles: str) -> str:
         """Combine text and subtitles into single string"""
@@ -292,50 +560,69 @@ class OpenAIService:
     
     def _get_prompt_text(self, combined_text: str, frames: List[str], language: str) -> str:
         """Get appropriate prompt text based on language"""
-        if language.lower() == "en":
-            return f"""Reconstruct the complete recipe from the following information:
-
-{combined_text}
-
-DETAILED ANALYSIS OF ALL VIDEO FRAMES:
-Analyze each of the {len(frames)} images individually:
-- What do you see in image 1, 2, 3, etc.?
-- Which ingredients are visible?
-- Which cooking steps are shown?
-- What quantities can you estimate?
-- Which techniques are being used?
-
-Reconstruct a complete, cookable recipe with:
-- A descriptive title (e.g., "Creamy Pasta Carbonara" or "Quick Vegetable Stir-fry")
-- Specific ingredients with realistic quantities
-- Detailed preparation steps
-- Add missing but necessary steps
-
-Respond with complete JSON: {{"title": "Short, descriptive recipe title", "ingredients": ["specific ingredient with quantity"], "steps": ["detailed step with times/temperatures"]}}"""
-        else:  # German (default)
-            return f"""Rekonstruiere das komplette Rezept aus folgenden Informationen:
-
-{combined_text}
-
-DETAILANALYSE ALLER VIDEO-FRAMES:
-Analysiere jedes der {len(frames)} Bilder einzeln:
-- Was siehst du in Bild 1, 2, 3, etc.?
-- Welche Zutaten sind sichtbar?
-- Welche Kochschritte werden gezeigt?
-- Welche Mengen kannst du schätzen?
-- Welche Techniken werden verwendet?
-
-Rekonstruiere daraus ein vollständiges, kochbares Rezept mit:
-- Einem aussagekräftigen Titel (z.B. "Cremige Pasta Carbonara" oder "Schnelle Gemüsepfanne")
-- Konkreten Zutaten und realistischen Mengen
-- Detaillierten Zubereitungsschritten
-- Ergänze fehlende aber notwendige Schritte
-
-Antworte mit vollständigem JSON: {{"title": "Kurzer, aussagekräftiger Rezept-Titel", "ingredients": ["konkrete Zutat mit Menge"], "steps": ["detaillierter Schritt mit Zeiten/Temperaturen"]}}"""
+        return prompt_service.get_user_prompt(language, combined_text, len(frames))
     
     def _get_frame_only_prompt(self, frames: List[str], language: str) -> str:
         """Get prompt for frame-only processing"""
-        return f"""Analysiere alle {len(frames)} Video-Frames einzeln und rekonstruiere das komplette Rezept:
+        language_obj = prompt_service.detect_language(language)
+        
+        if language_obj.value == "en":
+            return f"""Analyze all {len(frames)} video frames individually and reconstruct the complete recipe:
+
+FRAME ANALYSIS:
+- Image 1: What do you see? Which ingredients/steps?
+- Image 2: What happens here? What changes?
+- Image 3-{len(frames)}: Continue analysis...
+
+Reconstruct a complete recipe even if not everything is explicitly shown. Use your cooking knowledge to create an authentic, cookable recipe.
+
+Respond with JSON: {{"title": "Short Recipe Title", "ingredients": ["specific ingredient with quantity"], "steps": ["detailed step"]}}"""
+        elif language_obj.value == "fr":
+            return f"""Analysez toutes les {len(frames)} images vidéo individuellement et reconstruisez la recette complète:
+
+ANALYSE DES IMAGES:
+- Image 1: Que voyez-vous? Quels ingrédients/étapes?
+- Image 2: Que se passe-t-il ici? Quels changements?
+- Image 3-{len(frames)}: Suite de l'analyse...
+
+Reconstruisez une recette complète même si tout n'est pas explicitement montré. Utilisez vos connaissances culinaires pour créer une recette authentique et réalisable.
+
+Répondez avec JSON: {{"title": "Titre de Recette Court", "ingredients": ["ingrédient spécifique avec quantité"], "steps": ["étape détaillée"]}}"""
+        elif language_obj.value == "es":
+            return f"""Analiza todos los {len(frames)} fotogramas de video individualmente y reconstruye la receta completa:
+
+ANÁLISIS DE FOTOGRAMAS:
+- Imagen 1: ¿Qué ves? ¿Qué ingredientes/pasos?
+- Imagen 2: ¿Qué pasa aquí? ¿Qué cambios?
+- Imagen 3-{len(frames)}: Continúa el análisis...
+
+Reconstruye una receta completa incluso si no todo se muestra explícitamente. Usa tu conocimiento culinario para crear una receta auténtica y cocible.
+
+Responde con JSON: {{"title": "Título de Receta Corto", "ingredients": ["ingrediente específico con cantidad"], "steps": ["paso detallado"]}}"""
+        elif language_obj.value == "it":
+            return f"""Analizza tutti i {len(frames)} fotogrammi video individualmente e ricostruisci la ricetta completa:
+
+ANALISI DEI FOTOGRAMMI:
+- Immagine 1: Cosa vedi? Quali ingredienti/passaggi?
+- Immagine 2: Cosa succede qui? Quali cambiamenti?
+- Immagine 3-{len(frames)}: Continua l'analisi...
+
+Ricostruisci una ricetta completa anche se non tutto è mostrato esplicitamente. Usa la tua conoscenza culinaria per creare una ricetta autentica e cucinabile.
+
+Rispondi con JSON: {{"title": "Titolo Ricetta Breve", "ingredients": ["ingrediente specifico con quantità"], "steps": ["passaggio dettagliato"]}}"""
+        elif language_obj.value == "nl":
+            return f"""Analyseer alle {len(frames)} video frames individueel en reconstrueer het complete recept:
+
+FRAME ANALYSE:
+- Beeld 1: Wat zie je? Welke ingrediënten/stappen?
+- Beeld 2: Wat gebeurt hier? Welke veranderingen?
+- Beeld 3-{len(frames)}: Vervolg analyse...
+
+Reconstrueer een compleet recept ook als niet alles expliciet wordt getoond. Gebruik je kookkennis om een authentiek, kookbaar recept te maken.
+
+Antwoord met JSON: {{"title": "Korte Recept Titel", "ingredients": ["specifiek ingrediënt met hoeveelheid"], "steps": ["gedetailleerde stap"]}}"""
+        else:  # German (default)
+            return f"""Analysiere alle {len(frames)} Video-Frames einzeln und rekonstruiere das komplette Rezept:
 
 FRAME-ANALYSE:
 - Bild 1: Was siehst du? Welche Zutaten/Schritte?
@@ -375,23 +662,7 @@ Antworte mit JSON: {{"title": "Kurzer Rezept-Titel", "ingredients": ["konkrete Z
     
     def _get_system_prompt(self, language: str) -> str:
         """Get system prompt based on language"""
-        return f"""Du bist ein erfahrener Koch und Rezept-Experte. Analysiere JEDES einzelne Video-Frame detailliert und rekonstruiere das komplette Rezept. Antworte in {"English" if language == "en" else "deutscher"} Sprache.
-
-WICHTIGE REGELN:
-1. Schaue dir JEDES Bild genau an - analysiere Zutaten, Mengen, Kochgeschirr, Techniken
-2. Rekonstruiere das Rezept auch wenn es nicht explizit gezeigt wird
-3. Schätze Mengen basierend auf dem was du siehst (Tassen, Löffel, Portionsgrößen)
-4. Leite Zubereitungsschritte aus den Bildern ab (was passiert in welcher Reihenfolge?)
-5. Nutze dein Kochwissen um fehlende Schritte zu ergänzen (Gewürze, Garzeiten, Temperaturen)
-6. Falls nur Beschreibung vorhanden: Erstelle ein vollständiges, authentisches Rezept basierend auf der Beschreibung
-
-BEISPIEL für "Lasagne":
-- Analysiere alle sichtbaren Zutaten in den Frames
-- Rekonstruiere die Schichtung
-- Ergänze typische Mengen und Zubereitungszeiten
-- Gib konkrete, umsetzbare Schritte
-
-Antworte IMMER mit vollständigem JSON: {{"title": "Kurzer, aussagekräftiger Rezept-Titel", "ingredients": ["konkrete Zutat mit Menge", ...], "steps": ["detaillierter Schritt", ...]}}"""
+        return prompt_service.get_system_prompt(language)
     
     def _process_openai_response(self, response: Any) -> Dict[str, Any]:
         """Process OpenAI response and extract recipe JSON"""
@@ -462,25 +733,25 @@ Antworte IMMER mit vollständigem JSON: {{"title": "Kurzer, aussagekräftiger Re
                 return self._create_fallback_recipe("Text zu kurz oder leer für Rezept-Extraktion")
             
             logger.info(f"🚀 Sending text to OpenAI gpt-4o-mini...")
+            # Create language-appropriate prompts using PromptService
+            language_obj = prompt_service.detect_language(language)
+            system_prompt = prompt_service.get_optimized_system_prompt(language)
+            
+            if language_obj.value == "en":
+                user_prompt = f"Extract or reconstruct a recipe from the following text:\n\n{text[:2000]}"
+            else:
+                user_prompt = f"Extrahiere oder rekonstruiere ein Rezept aus folgendem Text:\n\n{text[:2000]}"
+            
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {
                         "role": "system", 
-                        "content": f"""Du bist ein Rezept-Experte. Extrahiere aus dem gegebenen Text ein strukturiertes Rezept. Antworte in {"English" if language == "en" else "deutscher"} Sprache.
-                        
-Wenn der Text ein Rezept enthält, extrahiere:
-                        - Einen beschreibenden Titel
-                        - Alle Zutaten mit Mengenangaben
-                        - Schritt-für-Schritt Anweisungen
-                        
-                        Wenn kein klares Rezept erkennbar ist, erstelle basierend auf der Beschreibung ein plausibles Rezept.
-                        
-                        Antworte nur mit JSON: {{"title": "Aussagekräftiger Titel", "ingredients": ["Zutat mit Menge"], "steps": ["Detaillierter Schritt"]}}"""
+                        "content": system_prompt
                     },
                     {
                         "role": "user", 
-                        "content": f"Extrahiere oder rekonstruiere ein Rezept aus folgendem Text:\n\n{text[:2000]}"
+                        "content": user_prompt
                     }
                 ],
                 max_tokens=1500,
