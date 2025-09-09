@@ -10,3 +10,6 @@ flower
 opencv-python-headless
 python-jose
 gevent
+aiohttp
+aiofiles
+pydantic
