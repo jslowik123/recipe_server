@@ -102,8 +102,8 @@ class TikTokScraper:
 
                 if self.task_logger:
                     self.task_logger.log("INFO", "Text aus Video extrahiert", {
-                        "text_length": len(video_data["text"]),
-                        "has_text": bool(video_data["text"])
+                        "text_length": len(video_data.get("text", "") or ""),
+                        "has_text": bool(video_data.get("text"))
                     })
 
                 # Step 3: Extract subtitles
@@ -118,8 +118,8 @@ class TikTokScraper:
 
                 if self.task_logger:
                     self.task_logger.log("INFO", "Untertitel-Extraktion abgeschlossen", {
-                        "subtitles_length": len(video_data["subtitles"]) if video_data["subtitles"] else 0,
-                        "has_subtitles": bool(video_data["subtitles"])
+                        "subtitles_length": len(video_data["subtitles"] or "") if video_data.get("subtitles") else 0,
+                        "has_subtitles": bool(video_data.get("subtitles"))
                     })
 
                 # Step 4: Extract frames
@@ -144,16 +144,16 @@ class TikTokScraper:
                     self.task_logger.log("INFO", "🤖 Starte OpenAI Verarbeitung", {
                         "language": language,
                         "input_data": {
-                            "text_length": len(video_data.get("text", "")),
-                            "subtitles_length": len(video_data.get("subtitles", "")),
+                            "text_length": len(video_data.get("text", "") or ""),
+                            "subtitles_length": len(video_data.get("subtitles", "") or ""),
                             "frames_count": len(frames) if frames else 0
                         }
                     })
 
                 video_data["processed_recipe"] = self.openai_service.process_video_content(
-                    text=video_data.get("text", ""),
-                    subtitles=video_data.get("subtitles", ""),
-                    frames=frames,
+                    text=video_data.get("text", "") or "",
+                    subtitles=video_data.get("subtitles", "") or "",
+                    frames=frames or [],
                     language=language
                 )
 
