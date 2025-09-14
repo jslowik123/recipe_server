@@ -46,7 +46,7 @@ class ApifyService:
             "postURLs": [video_url],
             "scrapeRelatedVideos": False,
             "resultsPerPage": 1,
-            "shouldDownloadVideos": False,
+            "shouldDownloadVideos": True,
             "shouldDownloadCovers": False,
             "shouldDownloadSubtitles": True,
             "shouldDownloadSlideshowImages": False,
@@ -114,11 +114,30 @@ class VideoProcessor:
     def extract_frames(self, item: Dict[str, Any]) -> List[str]:
         """Extract video frames from Apify item"""
         video_download_url = self._get_video_url(item)
-        
+
         if video_download_url:
             return self._download_and_extract_frames(video_download_url)
         else:
-            logger.error("❌ No video URL available for frame extraction")
+            logger.warning("❌ No direct video URL available, trying alternatives...")
+
+            # Try to extract from cover image as fallback
+            if "videoMeta" in item and item["videoMeta"] and "coverUrl" in item["videoMeta"]:
+                cover_url = item["videoMeta"]["coverUrl"]
+                logger.info(f"📸 Using cover image as frame: {cover_url}")
+                try:
+                    return self._extract_frame_from_image(cover_url)
+                except Exception as e:
+                    logger.error(f"❌ Failed to extract cover image: {e}")
+
+            # Try yt-dlp as last resort if webVideoUrl is available
+            if "webVideoUrl" in item and item["webVideoUrl"]:
+                logger.info(f"🎯 Trying yt-dlp extraction from: {item['webVideoUrl']}")
+                try:
+                    return self._extract_frames_with_ytdlp(item["webVideoUrl"])
+                except Exception as e:
+                    logger.error(f"❌ yt-dlp extraction failed: {e}")
+
+            logger.warning("⚠️ All frame extraction methods failed, returning empty list")
             return []
     
     def _get_video_url(self, item: Dict[str, Any]) -> Optional[str]:
@@ -131,6 +150,9 @@ class VideoProcessor:
             return item["videoMeta"]["playAddr"]
         else:
             logger.warning("⚠️ No video download URL found in any expected location")
+            logger.info("📋 Available item keys: " + str(list(item.keys())))
+            if "videoMeta" in item and item["videoMeta"]:
+                logger.info("📋 VideoMeta keys: " + str(list(item["videoMeta"].keys())))
             return None
     
     def _download_and_extract_frames(self, video_url: str) -> List[str]:
@@ -273,8 +295,76 @@ class VideoProcessor:
         last_quarter_start = start_frame + 3 * useful_frames // 4
         last_quarter_positions = self._get_evenly_spaced_positions(last_quarter_start, end_frame, last_quarter_count)
         positions.extend(last_quarter_positions)
-        
+
         return positions
+
+    def _extract_frame_from_image(self, image_url: str) -> List[str]:
+        """Extract a single frame from an image URL (like cover image)"""
+        try:
+            response = requests.get(image_url, headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }, timeout=30)
+
+            if response.status_code != 200:
+                raise Exception(f"Failed to download image: HTTP {response.status_code}")
+
+            # Convert image to base64
+            import base64
+            image_base64 = base64.b64encode(response.content).decode('utf-8')
+            logger.info(f"✅ Extracted cover image as frame: {len(image_base64)} bytes")
+            return [image_base64]
+
+        except Exception as e:
+            logger.error(f"❌ Failed to extract image frame: {e}")
+            raise
+
+    def _extract_frames_with_ytdlp(self, video_url: str) -> List[str]:
+        """Try to extract frames using yt-dlp"""
+        try:
+            import subprocess
+            import tempfile
+            import os
+
+            # Check if yt-dlp is available
+            try:
+                subprocess.run(['yt-dlp', '--version'], capture_output=True, check=True)
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                logger.warning("⚠️ yt-dlp not available, skipping")
+                return []
+
+            with tempfile.TemporaryDirectory() as temp_dir:
+                video_path = os.path.join(temp_dir, 'video.%(ext)s')
+
+                # Download video with yt-dlp
+                cmd = [
+                    'yt-dlp',
+                    '--no-playlist',
+                    '--format', 'best[height<=720]',
+                    '--output', video_path,
+                    video_url
+                ]
+
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+
+                if result.returncode != 0:
+                    logger.error(f"❌ yt-dlp failed: {result.stderr}")
+                    return []
+
+                # Find the downloaded file
+                downloaded_files = [f for f in os.listdir(temp_dir) if f.startswith('video.')]
+                if not downloaded_files:
+                    logger.error("❌ No video file was downloaded")
+                    return []
+
+                actual_video_path = os.path.join(temp_dir, downloaded_files[0])
+                logger.info(f"✅ Downloaded video with yt-dlp: {actual_video_path}")
+
+                # Extract frames from downloaded video
+                return self._extract_frames_from_file(actual_video_path)
+
+        except Exception as e:
+            logger.error(f"❌ yt-dlp extraction failed: {e}")
+            raise
     
     def _get_strategic_long_video_positions(self, start_frame: int, end_frame: int, max_frames: int) -> List[int]:
         """Strategic sampling for long videos with emphasis on middle sections"""
