@@ -101,7 +101,7 @@ def health_check():
     }
 
 @app.post("/scrape/async", response_model=TaskResponse)
-def scrape_tiktok_videos_async(request: TikTokScrapeRequest,user_id: str = Depends(verify_token)):
+def scrape_tiktok_videos_async(request: TikTokScrapeRequest, user_id: str = Depends(verify_token)):
     """
     Start asynchronous TikTok scraping task for a single URL
     """

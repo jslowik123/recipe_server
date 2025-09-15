@@ -11,7 +11,6 @@ services:
       - nginx-certs:/etc/nginx/certs
       - nginx-vhost:/etc/nginx/vhost.d
       - nginx-html:/usr/share/nginx/html
-      - ./nginx-custom.conf:/etc/nginx/conf.d/custom.conf:ro
     labels:
       - "com.github.nginx-proxy.nginx"
     restart: unless-stopped
