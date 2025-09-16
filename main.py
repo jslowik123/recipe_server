@@ -26,7 +26,8 @@ class TaskResponse(BaseModel):
     message: str
 
 
-async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+def verify_token_sync(credentials: HTTPAuthorizationCredentials) -> str:
+    """Synchronous JWT token verification"""
     try:
         jwt_secret = config.supabase_jwt_secret
     except Exception:
@@ -34,7 +35,7 @@ async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(secur
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="JWT Secret nicht konfiguriert",
         )
-    
+
     token = credentials.credentials
     try:
         # JWT verifizieren
@@ -61,6 +62,10 @@ async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(secur
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Ungültiger Token",
         )
+
+async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Async wrapper for JWT verification (for dependency injection)"""
+    return verify_token_sync(credentials)
     
     
 @app.get("/")
@@ -101,18 +106,21 @@ def health_check():
     }
 
 @app.post("/scrape/async", response_model=TaskResponse)
-def scrape_tiktok_videos_async(request: TikTokScrapeRequest, user_id: str = Depends(verify_token)):
+def scrape_tiktok_videos_async(request: TikTokScrapeRequest, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """
     Start asynchronous TikTok scraping task for a single URL
     """
     try:
-        
+        # Verify JWT token and get user_id
+        user_id = verify_token_sync(credentials)
+        jwt_token = credentials.credentials
+
         # Validate URL
         if not request.url or not request.url.strip():
             raise HTTPException(status_code=422, detail="URL is required and cannot be empty")
-        
-        # Start the async task
-        task = scrape_tiktok_async.delay(request.url.strip(), request.language, user_id)
+
+        # Start the async task with JWT token
+        task = scrape_tiktok_async.delay(request.url.strip(), request.language, user_id, jwt_token)
         
         return TaskResponse(
             task_id=task.id,

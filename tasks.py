@@ -43,7 +43,7 @@ celery_app.conf.update(
 )
 
 @celery_app.task(bind=True)
-def scrape_tiktok_async(self, post_url: str, language: str, user_id: str):
+def scrape_tiktok_async(self, post_url: str, language: str, user_id: str, jwt_token: str = None):
     """
     Asynchronously scrape a single TikTok video and process with AI using refactored services
     """
@@ -160,7 +160,8 @@ def scrape_tiktok_async(self, post_url: str, language: str, user_id: str):
             uploaded_recipe = supabase_service.upload_recipe(
                 user_id=user_id,
                 recipe_data=result,
-                original_url=post_url
+                original_url=post_url,
+                jwt_token=jwt_token
             )
 
             task_logger.log_success("Rezept erfolgreich zu Supabase hochgeladen", {

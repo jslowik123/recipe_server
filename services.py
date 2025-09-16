@@ -879,30 +879,42 @@ Antworte mit JSON: {{"title": "Kurzer Rezept-Titel", "ingredients": ["konkrete Z
 
 
 class SupabaseService:
-    """Service for uploading recipes to Supabase"""
+    """Service for uploading recipes to Supabase with user authentication"""
 
     def __init__(self):
-        self.client: Client = create_client(config.supabase_url, config.supabase_key)
+        # Use anon key for authenticated requests (not service key)
+        self.client: Client = create_client(
+            config.supabase_url,
+            config.supabase_key  # This should be the anon key
+        )
         logger.info(f"🗄️ Supabase client initialized for URL: {config.supabase_url}")
 
     def upload_recipe(
         self,
         user_id: str,
         recipe_data: Dict[str, Any],
-        original_url: str
+        original_url: str,
+        jwt_token: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Upload a processed recipe to Supabase
+        Upload a processed recipe to Supabase with user authentication
 
         Args:
             user_id: The authenticated user ID from JWT
             recipe_data: Processed recipe data from OpenAI
             original_url: Original TikTok video URL
+            jwt_token: JWT token for user authentication
 
         Returns:
             The created recipe record
         """
         try:
+            # Set user session if JWT token provided
+            if jwt_token:
+                # Set the JWT token for authenticated requests
+                self.client.auth.set_session(jwt_token, refresh_token=None)
+                logger.info(f"🔐 Set user session for user_id: {user_id}")
+
             # Extract recipe from the processed data
             recipe = recipe_data.get('processed_recipe', {})
 
@@ -920,7 +932,7 @@ class SupabaseService:
             logger.info(f"📤 Uploading recipe to Supabase: {recipe_record['name']}")
             logger.debug(f"📋 Recipe data: {len(recipe_record['ingredients'])} ingredients, {len(recipe_record['steps'])} steps")
 
-            # Insert into Supabase
+            # Insert with user authentication - RLS will allow this
             response = self.client.table('recipes').insert(recipe_record).execute()
 
             if response.data and len(response.data) > 0:
