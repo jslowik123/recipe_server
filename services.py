@@ -911,8 +911,8 @@ class SupabaseService:
         try:
             # Set user session if JWT token provided
             if jwt_token:
-                # Set the JWT token for authenticated requests
-                self.client.auth.set_session(jwt_token, refresh_token=None)
+                # Set authorization header instead of session
+                self.client.auth.sign_in_with_id_token({"id_token": jwt_token})
                 logger.info(f"🔐 Set user session for user_id: {user_id}")
 
             # Extract recipe from the processed data
