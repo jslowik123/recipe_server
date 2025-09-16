@@ -945,7 +945,9 @@ class SupabaseService:
 
         except Exception as e:
             logger.error(f"❌ Failed to upload recipe to Supabase: {e}")
-            logger.error(f"📋 Recipe data that failed: {recipe_record}")
+            # Only log recipe_record if it was defined
+            if 'recipe_record' in locals():
+                logger.error(f"📋 Recipe data that failed: {recipe_record}")
             raise Exception(f"Supabase upload failed: {str(e)}")
 
     def _truncate_string(self, text: str, max_length: int) -> str:
