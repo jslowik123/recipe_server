@@ -918,6 +918,12 @@ class SupabaseService:
             # Extract recipe from the processed data
             recipe = recipe_data.get('processed_recipe', {})
 
+            # Debug: Log the actual recipe structure
+            logger.info(f"🔍 Debug: recipe_data keys: {list(recipe_data.keys())}")
+            logger.info(f"🔍 Debug: processed_recipe type: {type(recipe)}")
+            logger.info(f"🔍 Debug: processed_recipe keys: {list(recipe.keys()) if isinstance(recipe, dict) else 'Not a dict'}")
+            logger.info(f"🔍 Debug: recipe content preview: {str(recipe)[:200]}...")
+
             # Prepare recipe data for Supabase
             recipe_record = {
                 'name': recipe.get('title', 'Untitled Recipe')[:255],  # Truncate to prevent DB errors
