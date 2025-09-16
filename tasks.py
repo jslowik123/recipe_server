@@ -10,6 +10,7 @@ from config import config
 from tiktok_scraper import TikTokScraper
 from exceptions import TikTokScrapingError
 from detailed_logger import get_task_logger, finalize_task_log
+from services import SupabaseService
 
 # Configure logging (console only)
 logging.basicConfig(
@@ -42,7 +43,7 @@ celery_app.conf.update(
 )
 
 @celery_app.task(bind=True)
-def scrape_tiktok_async(self, post_url: str, language: str):
+def scrape_tiktok_async(self, post_url: str, language: str, user_id: str):
     """
     Asynchronously scrape a single TikTok video and process with AI using refactored services
     """
@@ -54,6 +55,7 @@ def scrape_tiktok_async(self, post_url: str, language: str):
         "task_id": task_id,
         "post_url": post_url,
         "language": language,
+        "user_id": user_id,
         "max_frames": 20,
         "start_time": time.time()
     })
@@ -152,12 +154,50 @@ def scrape_tiktok_async(self, post_url: str, language: str):
         # Add processing timestamp
         result['processed_at'] = time.time()
 
+        # Upload to Supabase
+        try:
+            supabase_service = SupabaseService()
+            uploaded_recipe = supabase_service.upload_recipe(
+                user_id=user_id,
+                recipe_data=result,
+                original_url=post_url
+            )
+
+            task_logger.log_success("Rezept erfolgreich zu Supabase hochgeladen", {
+                "recipe_id": uploaded_recipe.get('id'),
+                "recipe_name": uploaded_recipe.get('name'),
+                "user_id": user_id
+            })
+
+            logger.info(f"📤 Recipe uploaded to Supabase: ID={uploaded_recipe.get('id')}")
+
+            # Return simple success message instead of full recipe data
+            result = {
+                "status": "success",
+                "message": "Recipe successfully processed and saved",
+                "recipe_id": uploaded_recipe.get('id'),
+                "recipe_name": uploaded_recipe.get('name')
+            }
+
+        except Exception as upload_error:
+            task_logger.log_error(upload_error, "Supabase Upload Failed", {
+                "url": post_url,
+                "user_id": user_id,
+                "error_message": str(upload_error)
+            })
+
+            logger.error(f"❌ Failed to upload recipe to Supabase: {upload_error}")
+
+            # Return the original result if upload fails
+            result['upload_error'] = str(upload_error)
+
         # Log final success
         task_logger.log_success("Task erfolgreich abgeschlossen", {
             "final_result_keys": list(result.keys()) if isinstance(result, dict) else [],
             "processing_time": time.time(),
             "url": post_url,
-            "has_ai_recipe": "processed_recipe" in str(result)
+            "has_ai_recipe": "processed_recipe" in str(result),
+            "uploaded_to_supabase": "recipe_id" in result
         })
 
         logger.info(f"✅ Successfully completed scraping task for {post_url}")
@@ -166,8 +206,10 @@ def scrape_tiktok_async(self, post_url: str, language: str):
         finalize_task_log(task_id, "SUCCESS", {
             "url": post_url,
             "language": language,
+            "user_id": user_id,
             "result_status": result.get("status", "unknown"),
-            "has_recipe": "processed_recipe" in str(result)
+            "has_recipe": "processed_recipe" in str(result),
+            "uploaded_to_supabase": "recipe_id" in result
         })
 
         return result
@@ -199,6 +241,7 @@ def scrape_tiktok_async(self, post_url: str, language: str):
         finalize_task_log(task_id, "FAILURE", {
             "url": post_url,
             "language": language,
+            "user_id": user_id,
             "error_type": "TikTokScrapingError",
             "error_message": str(scraping_exc)
         })
@@ -232,6 +275,7 @@ def scrape_tiktok_async(self, post_url: str, language: str):
         finalize_task_log(task_id, "FAILURE", {
             "url": post_url,
             "language": language,
+            "user_id": user_id,
             "error_type": type(exc).__name__,
             "error_message": str(exc),
             "full_traceback": traceback.format_exc()

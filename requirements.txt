@@ -13,3 +13,4 @@ gevent
 aiohttp
 aiofiles
 pydantic
+supabase

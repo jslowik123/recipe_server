@@ -112,7 +112,7 @@ def scrape_tiktok_videos_async(request: TikTokScrapeRequest, user_id: str = Depe
             raise HTTPException(status_code=422, detail="URL is required and cannot be empty")
         
         # Start the async task
-        task = scrape_tiktok_async.delay(request.url.strip(), request.language)
+        task = scrape_tiktok_async.delay(request.url.strip(), request.language, user_id)
         
         return TaskResponse(
             task_id=task.id,
@@ -153,32 +153,24 @@ def get_task_status(task_id: str, user_id: str = Depends(verify_token)):
             }
         elif task_result.state == 'SUCCESS':
             result = task_result.result
-            
-            # Clean, simple response format for Flutter
+
+            # New response format: recipe is already uploaded to Supabase
             if result and isinstance(result, dict):
-                video_result = result.get('result', {})
-                recipe = video_result.get('processed_recipe')
-                
                 return {
-                    "id": task_id,
-                    "name": recipe.get('title', 'Untitled Recipe') if recipe else 'Untitled Recipe',
-                    "description": recipe.get('title', 'Extracted recipe from TikTok') if recipe else 'Extracted recipe from TikTok',
-                    "original_link": result.get('url', ''),
-                    "ingredients": recipe.get('ingredients', []) if recipe else [],
-                    "steps": recipe.get('steps', []) if recipe else [],
-                    "user_id": user_id,
-                    "created_at": datetime.utcnow().isoformat() + "Z"
+                    "task_id": task_id,
+                    "status": "SUCCESS",
+                    "message": result.get('message', 'Recipe successfully processed'),
+                    "recipe_id": result.get('recipe_id'),
+                    "recipe_name": result.get('recipe_name', 'Recipe'),
+                    "upload_error": result.get('upload_error')  # Only present if upload failed
                 }
-            
+
             return {
-                "id": task_id,
-                "name": "Untitled Recipe",
-                "description": "Extracted recipe from TikTok",
-                "original_link": "",
-                "ingredients": [],
-                "steps": [],
-                "user_id": user_id,
-                "created_at": datetime.utcnow().isoformat() + "Z"
+                "task_id": task_id,
+                "status": "SUCCESS",
+                "message": "Recipe processing completed",
+                "recipe_id": None,
+                "recipe_name": "Unknown Recipe"
             }
         else:  # FAILURE
             return {

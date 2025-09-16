@@ -42,6 +42,22 @@ class Config:
         if not secret:
             raise ConfigurationError("SUPABASE_JWT_SECRET not found in environment variables")
         return secret
+
+    @property
+    def supabase_url(self) -> str:
+        """Get Supabase URL"""
+        url = os.getenv("SUPABASE_URL")
+        if not url:
+            raise ConfigurationError("SUPABASE_URL not found in environment variables")
+        return url
+
+    @property
+    def supabase_key(self) -> str:
+        """Get Supabase service role key"""
+        key = os.getenv("SUPABASE_KEY")
+        if not key:
+            raise ConfigurationError("SUPABASE_KEY not found in environment variables")
+        return key
     
     def _validate_config(self):
         """Validate that all required configuration is present"""
@@ -50,6 +66,8 @@ class Config:
             _ = self.apify_token
             _ = self.openai_api_key
             _ = self.supabase_jwt_secret
+            _ = self.supabase_url
+            _ = self.supabase_key
         except ConfigurationError as e:
             raise ConfigurationError(f"Configuration validation failed: {e}")
 

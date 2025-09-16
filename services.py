@@ -17,10 +17,12 @@ import cv2
 import requests
 from apify_client import ApifyClient
 from openai import OpenAI
+from supabase import create_client, Client
+from datetime import datetime
 
 from config import config
 from exceptions import (
-    ApifyError, OpenAIError, VideoProcessingError, 
+    ApifyError, OpenAIError, VideoProcessingError,
     VideoDownloadError, FrameExtractionError
 )
 from prompt_service import prompt_service
@@ -866,3 +868,70 @@ Antworte mit JSON: {{"title": "Kurzer Rezept-Titel", "ingredients": ["konkrete Z
             "ingredients": [],
             "steps": [error_message]
         }
+
+
+class SupabaseService:
+    """Service for uploading recipes to Supabase"""
+
+    def __init__(self):
+        self.client: Client = create_client(config.supabase_url, config.supabase_key)
+        logger.info(f"🗄️ Supabase client initialized for URL: {config.supabase_url}")
+
+    def upload_recipe(
+        self,
+        user_id: str,
+        recipe_data: Dict[str, Any],
+        original_url: str
+    ) -> Dict[str, Any]:
+        """
+        Upload a processed recipe to Supabase
+
+        Args:
+            user_id: The authenticated user ID from JWT
+            recipe_data: Processed recipe data from OpenAI
+            original_url: Original TikTok video URL
+
+        Returns:
+            The created recipe record
+        """
+        try:
+            # Extract recipe from the processed data
+            recipe = recipe_data.get('processed_recipe', {})
+
+            # Prepare recipe data for Supabase
+            recipe_record = {
+                'name': recipe.get('title', 'Untitled Recipe')[:255],  # Truncate to prevent DB errors
+                'description': recipe.get('title', 'Extracted recipe from TikTok')[:255],
+                'original_link': original_url[:500],
+                'ingredients': recipe.get('ingredients', []),
+                'steps': recipe.get('steps', []),
+                'user_id': user_id,
+                'created_at': datetime.utcnow().isoformat() + "Z"
+            }
+
+            logger.info(f"📤 Uploading recipe to Supabase: {recipe_record['name']}")
+            logger.debug(f"📋 Recipe data: {len(recipe_record['ingredients'])} ingredients, {len(recipe_record['steps'])} steps")
+
+            # Insert into Supabase
+            response = self.client.table('recipes').insert(recipe_record).execute()
+
+            if response.data and len(response.data) > 0:
+                created_recipe = response.data[0]
+                logger.info(f"✅ Successfully uploaded recipe to Supabase: ID={created_recipe.get('id')}")
+                return created_recipe
+            else:
+                logger.error("❌ Supabase upload failed: No data returned")
+                raise Exception("No data returned from Supabase insert")
+
+        except Exception as e:
+            logger.error(f"❌ Failed to upload recipe to Supabase: {e}")
+            logger.error(f"📋 Recipe data that failed: {recipe_record}")
+            raise Exception(f"Supabase upload failed: {str(e)}")
+
+    def _truncate_string(self, text: str, max_length: int) -> str:
+        """Helper to safely truncate strings"""
+        if not text:
+            return ""
+        if len(text) <= max_length:
+            return text
+        return f"{text[:max_length-3]}..."
