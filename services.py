@@ -915,11 +915,13 @@ class SupabaseService:
                 self.client.auth._headers['Authorization'] = f'Bearer {jwt_token}'
                 logger.info(f"🔐 Set JWT authorization header for user_id: {user_id}")
 
-            # Extract recipe from the processed data
-            recipe = recipe_data.get('processed_recipe', {})
+            # Extract recipe from the processed data - it's nested in 'result'
+            result_data = recipe_data.get('result', {})
+            recipe = result_data.get('processed_recipe', {})
 
             # Debug: Log the actual recipe structure
             logger.info(f"🔍 Debug: recipe_data keys: {list(recipe_data.keys())}")
+            logger.info(f"🔍 Debug: result_data keys: {list(result_data.keys()) if isinstance(result_data, dict) else 'No result_data'}")
             logger.info(f"🔍 Debug: processed_recipe type: {type(recipe)}")
             logger.info(f"🔍 Debug: processed_recipe keys: {list(recipe.keys()) if isinstance(recipe, dict) else 'Not a dict'}")
             logger.info(f"🔍 Debug: recipe content preview: {str(recipe)[:200]}...")
