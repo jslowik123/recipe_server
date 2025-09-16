@@ -52,6 +52,14 @@ class ApifyService:
             "shouldDownloadCovers": False,
             "shouldDownloadSubtitles": True,
             "shouldDownloadSlideshowImages": False,
+            # Anti-blocking optimizations
+            "maxRequestRetries": 5,
+            "requestTimeoutSecs": 120,
+            "maxConcurrency": 1,  # Reduce concurrency to avoid rate limits
+            "proxyConfiguration": {
+                "useApifyProxy": True,
+                "groups": ["RESIDENTIAL"]
+            }
         }
         
         try:
