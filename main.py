@@ -1,7 +1,9 @@
 import fastapi
 import uvicorn
 import logging
-from fastapi import BackgroundTasks, HTTPException, Depends, status
+import asyncio
+from contextlib import asynccontextmanager
+from fastapi import BackgroundTasks, HTTPException, Depends, status, WebSocket, WebSocketDisconnect, Query
 from pydantic import BaseModel
 from typing import List, Optional
 from tasks import scrape_tiktok_async, celery_app
@@ -9,11 +11,45 @@ from config import config
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from datetime import datetime
+from websocket_manager import initialize_websocket_manager, get_websocket_manager
 
 logger = logging.getLogger(__name__)
 
 
-app = fastapi.FastAPI(title="Apify TikTok Scraper with Redis", version="1.0.0")
+@asynccontextmanager
+async def lifespan(app: fastapi.FastAPI):
+    """Application lifespan manager"""
+    # Startup
+    logger.info("🚀 Starting application...")
+
+    # Initialize WebSocket manager
+    ws_manager = initialize_websocket_manager(config.redis_url, celery_app)
+    await ws_manager.initialize()
+
+    # Start background listener for Redis pub/sub
+    listener_task = asyncio.create_task(ws_manager.listen_for_updates())
+
+    logger.info("✅ Application startup complete")
+
+    yield
+
+    # Shutdown
+    logger.info("🛑 Shutting down application...")
+    listener_task.cancel()
+    try:
+        await listener_task
+    except asyncio.CancelledError:
+        pass
+
+    await ws_manager.cleanup()
+    logger.info("✅ Application shutdown complete")
+
+
+app = fastapi.FastAPI(
+    title="Apify TikTok Scraper with WebSockets",
+    version="2.0.0",
+    lifespan=lifespan
+)
 security = HTTPBearer()
 # Pydantic Models
 class TikTokScrapeRequest(BaseModel):
@@ -84,7 +120,8 @@ def read_root():
         "endpoints": {
             "health": "/health - Service health check",
             "scrape": "/scrape/async - Start TikTok scraping task",
-            "status": "/task/{task_id} - Check task progress",
+            "status": "/task/{task_id} - Check task progress (HTTP polling fallback)",
+            "websocket": "/ws/{task_id} - Real-time task updates (WebSocket)",
             "active": "/tasks/active - View active tasks"
         },
         "features": [
@@ -92,9 +129,10 @@ def read_root():
             "Async Task Processing",
             "AI Recipe Extraction",
             "Redis Queue Management",
-            "Real-time Progress Tracking"
+            "Real-time WebSocket Updates",
+            "HTTP Polling Fallback"
         ],
-        "powered_by": "FastAPI + Celery + Redis"
+        "powered_by": "FastAPI + Celery + Redis + WebSockets"
     }
 
 @app.get("/health")
@@ -200,6 +238,76 @@ def get_active_tasks(user_id: str = Depends(verify_token)):
         return {"active_tasks": active_tasks}
     except Exception as e:
         return {"error": f"Failed to get active tasks: {str(e)}"}
+
+
+@app.websocket("/ws/{task_id}")
+async def websocket_task_updates(
+    websocket: WebSocket,
+    task_id: str,
+    token: str = Query(..., description="JWT token for authentication")
+):
+    """
+    WebSocket endpoint for real-time task updates
+
+    Usage:
+    - Connect to: /ws/{task_id}?token={jwt_token}
+    - Receives real-time JSON messages about task progress
+    - Automatically disconnects when task completes or fails
+    """
+    ws_manager = get_websocket_manager()
+
+    try:
+        # Verify JWT token from query parameter
+        try:
+            jwt_secret = config.supabase_jwt_secret
+            payload = jwt.decode(
+                token,
+                jwt_secret,
+                algorithms=["HS256"],
+                audience="authenticated"
+            )
+            user_id = payload.get("sub")
+            if not user_id:
+                await websocket.close(code=4001, reason="Invalid token")
+                return
+        except (jwt.ExpiredSignatureError, JWTError):
+            await websocket.close(code=4001, reason="Invalid or expired token")
+            return
+
+        # Connect and verify task ownership
+        connected = await ws_manager.connect(websocket, task_id, user_id)
+        if not connected:
+            return
+
+        logger.info(f"🔌 WebSocket connected: task={task_id}, user={user_id}")
+
+        try:
+            # Keep connection alive and handle disconnection
+            while True:
+                try:
+                    # Wait for client messages (ping/pong, etc.)
+                    message = await websocket.receive_text()
+
+                    # Handle ping/pong for connection keepalive
+                    if message == "ping":
+                        await websocket.send_text("pong")
+
+                except WebSocketDisconnect:
+                    logger.info(f"🔌 WebSocket disconnected: task={task_id}")
+                    break
+
+        except Exception as e:
+            logger.error(f"❌ WebSocket error for task {task_id}: {e}")
+
+    except Exception as e:
+        logger.error(f"❌ WebSocket connection error: {e}")
+        try:
+            await websocket.close(code=4000, reason="Internal server error")
+        except:
+            pass
+    finally:
+        # Clean up connection
+        await ws_manager.disconnect(websocket, task_id)
 
 def check_redis_connection():
     """

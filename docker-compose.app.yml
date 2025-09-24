@@ -15,6 +15,9 @@ services:
       - VIRTUAL_PORT=8000
       - LETSENCRYPT_HOST=${MAIN_DOMAIN}
       - LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL}
+      # WebSocket support for nginx-proxy
+      - VIRTUAL_PROTO=http
+      - VIRTUAL_ROOT=/
     volumes:
       - .:/app
     command: uvicorn main:app --host 0.0.0.0 --port 8000

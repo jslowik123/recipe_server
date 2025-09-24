@@ -1,6 +1,8 @@
 import time
 import traceback
 import logging
+import json
+import redis
 from celery import Celery, states
 from celery.exceptions import Ignore
 from typing import List
@@ -31,6 +33,24 @@ class SimpleRecipeResponse(BaseModel):
 
 # Celery Setup
 celery_app = Celery('tasks', broker=config.redis_url, backend=config.redis_url)
+
+# Redis client for WebSocket updates
+redis_client = redis.from_url(config.redis_url)
+
+
+def publish_websocket_update(task_id: str, update_type: str, data: dict):
+    """Publish WebSocket update to Redis for real-time client notifications"""
+    try:
+        message = {
+            "type": update_type,
+            "task_id": task_id,
+            "timestamp": time.time(),
+            **data
+        }
+        redis_client.publish("task_updates", json.dumps(message))
+        logger.debug(f"📡 Published {update_type} update for task {task_id}")
+    except Exception as e:
+        logger.error(f"❌ Failed to publish WebSocket update: {e}")
 
 # Configure Celery
 celery_app.conf.update(
@@ -68,13 +88,15 @@ def scrape_tiktok_async(self, post_url: str, language: str, user_id: str, jwt_to
             "service_config": "TikTokScraper mit max_frames=20"
         })
 
-        self.update_state(state='PROGRESS', meta={
+        progress_data = {
             'step': 1,
             'total_steps': 5,
             'status': 'Initializing TikTok scraper...',
             'url': post_url,
             'details': 'Setting up scraping services and configuration'
-        })
+        }
+        self.update_state(state='PROGRESS', meta=progress_data)
+        publish_websocket_update(task_id, "progress", progress_data)
 
         # Initialize scraper with services
         scraper = TikTokScraper(video_url=post_url, max_frames=20, task_id=task_id)
@@ -93,13 +115,15 @@ def scrape_tiktok_async(self, post_url: str, language: str, user_id: str, jwt_to
             "url": post_url
         })
 
-        self.update_state(state='PROGRESS', meta={
+        progress_data = {
             'step': 2,
             'total_steps': 5,
             'status': 'Starting Apify scraper...',
             'url': post_url,
             'details': 'Configuring scraping parameters and running Apify actor'
-        })
+        }
+        self.update_state(state='PROGRESS', meta=progress_data)
+        publish_websocket_update(task_id, "progress", progress_data)
 
         # Update progress - Processing content
         task_logger.log_step(3, 5, "Verarbeite Video-Inhalte", {
@@ -107,13 +131,15 @@ def scrape_tiktok_async(self, post_url: str, language: str, user_id: str, jwt_to
             "max_frames": 20
         })
 
-        self.update_state(state='PROGRESS', meta={
+        progress_data = {
             'step': 3,
             'total_steps': 5,
             'status': 'Processing video content...',
             'url': post_url,
             'details': 'Extracting subtitles, frames, and text data'
-        })
+        }
+        self.update_state(state='PROGRESS', meta=progress_data)
+        publish_websocket_update(task_id, "progress", progress_data)
 
         # Update progress - AI processing
         task_logger.log_step(4, 5, "KI-Verarbeitung mit OpenAI", {
@@ -123,13 +149,15 @@ def scrape_tiktok_async(self, post_url: str, language: str, user_id: str, jwt_to
             "input_data": ["text", "subtitles", "frames"]
         })
 
-        self.update_state(state='PROGRESS', meta={
+        progress_data = {
             'step': 4,
             'total_steps': 5,
             'status': 'Processing with AI...',
             'url': post_url,
             'details': 'Using OpenAI to analyze frames and text for recipe extraction'
-        })
+        }
+        self.update_state(state='PROGRESS', meta=progress_data)
+        publish_websocket_update(task_id, "progress", progress_data)
 
         # Run the complete scraping and processing pipeline
         task_logger.log("INFO", "Starte vollständige Scraping- und Verarbeitungs-Pipeline")
@@ -143,13 +171,15 @@ def scrape_tiktok_async(self, post_url: str, language: str, user_id: str, jwt_to
             "result_status": result.get("status") if isinstance(result, dict) else "unknown"
         })
 
-        self.update_state(state='PROGRESS', meta={
+        progress_data = {
             'step': 5,
             'total_steps': 5,
             'status': 'Finalizing results...',
             'url': post_url,
             'details': 'Packaging processed data for return'
-        })
+        }
+        self.update_state(state='PROGRESS', meta=progress_data)
+        publish_websocket_update(task_id, "progress", progress_data)
 
         # Add processing timestamp
         result['processed_at'] = time.time()
@@ -180,6 +210,14 @@ def scrape_tiktok_async(self, post_url: str, language: str, user_id: str, jwt_to
                 "recipe_name": uploaded_recipe.get('name')
             }
 
+            # Publish completion update to WebSocket
+            publish_websocket_update(task_id, "completion", {
+                "status": "SUCCESS",
+                "message": result['message'],
+                "recipe_id": result['recipe_id'],
+                "recipe_name": result['recipe_name']
+            })
+
         except Exception as upload_error:
             task_logger.log_error(upload_error, "Supabase Upload Failed", {
                 "url": post_url,
@@ -191,6 +229,13 @@ def scrape_tiktok_async(self, post_url: str, language: str, user_id: str, jwt_to
 
             # Return the original result if upload fails
             result['upload_error'] = str(upload_error)
+
+            # Publish completion with upload error to WebSocket
+            publish_websocket_update(task_id, "completion", {
+                "status": "SUCCESS",
+                "message": "Recipe processed but upload failed",
+                "upload_error": str(upload_error)
+            })
 
         # Log final success
         task_logger.log_success("Task erfolgreich abgeschlossen", {
@@ -226,17 +271,22 @@ def scrape_tiktok_async(self, post_url: str, language: str, user_id: str, jwt_to
         logger.error(f"❌ TikTok scraping error for {post_url}: {scraping_exc}")
         logger.error(f"📋 Full traceback: {traceback.format_exc()}")
 
-        self.update_state(
-            state=states.FAILURE,
-            meta={
-                'url': post_url,
-                'error': str(scraping_exc),
-                'status': 'TikTok scraping failed',
-                'details': f'Scraping error: {str(scraping_exc)}',
-                'exc_type': type(scraping_exc).__name__,
-                'exc_message': str(scraping_exc)
-            }
-        )
+        error_data = {
+            'url': post_url,
+            'error': str(scraping_exc),
+            'status': 'TikTok scraping failed',
+            'details': f'Scraping error: {str(scraping_exc)}',
+            'exc_type': type(scraping_exc).__name__,
+            'exc_message': str(scraping_exc)
+        }
+        self.update_state(state=states.FAILURE, meta=error_data)
+
+        # Publish error to WebSocket
+        publish_websocket_update(task_id, "error", {
+            "status": "FAILURE",
+            "error": str(scraping_exc),
+            "message": "TikTok scraping failed"
+        })
 
         # Finalize log with failure
         finalize_task_log(task_id, "FAILURE", {
@@ -260,17 +310,22 @@ def scrape_tiktok_async(self, post_url: str, language: str, user_id: str, jwt_to
         logger.error(f"❌ Unexpected error for {post_url}: {exc}")
         logger.error(f"📋 Full traceback: {traceback.format_exc()}")
 
-        self.update_state(
-            state=states.FAILURE,
-            meta={
-                'url': post_url,
-                'error': str(exc),
-                'status': 'Unexpected error occurred',
-                'details': f'Unexpected error during processing: {str(exc)}',
-                'exc_type': type(exc).__name__,
-                'exc_message': traceback.format_exc().split('\n')
-            }
-        )
+        error_data = {
+            'url': post_url,
+            'error': str(exc),
+            'status': 'Unexpected error occurred',
+            'details': f'Unexpected error during processing: {str(exc)}',
+            'exc_type': type(exc).__name__,
+            'exc_message': traceback.format_exc().split('\n')
+        }
+        self.update_state(state=states.FAILURE, meta=error_data)
+
+        # Publish error to WebSocket
+        publish_websocket_update(task_id, "error", {
+            "status": "FAILURE",
+            "error": str(exc),
+            "message": "Unexpected error occurred"
+        })
 
         # Finalize log with failure
         finalize_task_log(task_id, "FAILURE", {

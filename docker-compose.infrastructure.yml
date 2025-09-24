@@ -1,5 +1,5 @@
 services:
-  # Nginx Proxy mit SSL
+  # Nginx Proxy mit SSL und WebSocket Support
   nginx:
     image: nginxproxy/nginx-proxy:latest
     container_name: nginx-proxy
@@ -11,6 +11,10 @@ services:
       - nginx-certs:/etc/nginx/certs
       - nginx-vhost:/etc/nginx/vhost.d
       - nginx-html:/usr/share/nginx/html
+      - ./nginx-websocket.conf:/etc/nginx/vhost.d/${MAIN_DOMAIN}_location:ro
+    environment:
+      - ENABLE_IPV6=true
+      - DEFAULT_HOST=${MAIN_DOMAIN}
     labels:
       - "com.github.nginx-proxy.nginx"
     restart: unless-stopped
