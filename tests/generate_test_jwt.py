@@ -11,6 +11,28 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+def get_real_test_user_id():
+    """Get real test user ID from Supabase or return fallback"""
+    try:
+        from supabase import create_client
+
+        url = os.getenv("SUPABASE_URL")
+        service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+        if url and service_key:
+            supabase = create_client(url, service_key)
+            users = supabase.auth.admin.list_users()
+
+            # Look for test user
+            for user in users.data:
+                if user.email == "test@example.com":
+                    return user.id
+
+    except Exception:
+        pass  # Fallback to test ID
+
+    return 'test-user-uuid-123'  # Fallback
+
 def generate_test_jwt():
     """Generate a test JWT token that works with our Supabase setup"""
     # Get JWT secret from environment
@@ -19,9 +41,12 @@ def generate_test_jwt():
     if not JWT_SECRET:
         raise ValueError("SUPABASE_JWT_SECRET not found in environment variables")
 
+    # Try to get real user ID, fallback to test ID
+    user_id = get_real_test_user_id()
+
     # Payload mit Supabase-ähnlichen Claims
     payload = {
-        'sub': 'test-user-uuid-123',  # Simulierte User-ID
+        'sub': user_id,               # Real or test User-ID
         'aud': 'authenticated',       # Audience - wichtig für Supabase!
         'role': 'authenticated',      # Supabase-Rolle
         'iss': 'supabase',            # Issuer
