@@ -9,7 +9,10 @@ import logging
 import websockets
 from typing import Optional
 import requests
-from .generate_test_jwt import get_test_token
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from generate_test_jwt import get_test_token
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -236,7 +239,7 @@ async def main():
     """Main test function"""
 
     # Test configuration
-    TEST_TIKTOK_URL = "https://www.tiktok.com/@example/video/123456789"  # Replace with real URL
+    TEST_TIKTOK_URL = "https://vm.tiktok.com/ZNdsmfMct/"  # Replace with real URL
 
     # Generate test JWT token automatically
     try:
