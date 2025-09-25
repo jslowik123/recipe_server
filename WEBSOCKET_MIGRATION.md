@@ -15,7 +15,7 @@ Flutter → HTTP GET /task/{id} (every 5s) → FastAPI → Celery Status
 ### After (WebSocket + HTTP Hybrid)
 ```
 Flutter → HTTP POST /scrape/async → FastAPI → Celery → Redis
-Flutter → WebSocket /ws/{id} → FastAPI → Redis Pub/Sub → Real-time updates
+Flutter → WebSocket /wss/{id} → FastAPI → Redis Pub/Sub → Real-time updates
 Flutter → HTTP GET /task/{id} (fallback) → FastAPI → Celery Status
 ```
 
@@ -50,7 +50,7 @@ Flutter → HTTP GET /task/{id} (fallback) → FastAPI → Celery Status
 
 ### Connection
 ```javascript
-const ws = new WebSocket(`wss://yourdomain.com/ws/${taskId}?token=${jwtToken}`);
+const ws = new WebSocket(`wss://yourdomain.com/wss/${taskId}?token=${jwtToken}`);
 ```
 
 ### Message Types
@@ -131,7 +131,7 @@ class TaskWebSocket {
     _taskId = taskId;
     _jwtToken = jwtToken;
 
-    final uri = Uri.parse('wss://yourdomain.com/ws/$taskId?token=$jwtToken');
+    final uri = Uri.parse('wss://yourdomain.com/wss/$taskId?token=$jwtToken');
 
     try {
       _channel = WebSocketChannel.connect(uri);
@@ -326,7 +326,7 @@ python test_websocket.py
 ### 2. Production Testing
 ```bash
 # Test WebSocket connection
-wscat -c "wss://yourdomain.com/ws/test-task-id?token=your-jwt-token"
+wscat -c "wss://yourdomain.com/wss/test-task-id?token=your-jwt-token"
 
 # Test HTTP endpoints (should still work)
 curl -H "Authorization: Bearer your-jwt-token" \

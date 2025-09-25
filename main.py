@@ -121,7 +121,7 @@ def read_root():
             "health": "/health - Service health check",
             "scrape": "/scrape/async - Start TikTok scraping task",
             "status": "/task/{task_id} - Check task progress (HTTP polling fallback)",
-            "websocket": "/ws/{task_id} - Real-time task updates (WebSocket)",
+            "websocket": "/wss/{task_id} - Real-time task updates (WebSocket Secure)",
             "active": "/tasks/active - View active tasks"
         },
         "features": [
@@ -240,17 +240,17 @@ def get_active_tasks(user_id: str = Depends(verify_token)):
         return {"error": f"Failed to get active tasks: {str(e)}"}
 
 
-@app.websocket("/ws/{task_id}")
+@app.websocket("/wss/{task_id}")
 async def websocket_task_updates(
     websocket: WebSocket,
     task_id: str,
     token: str = Query(..., description="JWT token for authentication")
 ):
     """
-    WebSocket endpoint for real-time task updates
+    WebSocket Secure endpoint for real-time task updates
 
     Usage:
-    - Connect to: /ws/{task_id}?token={jwt_token}
+    - Connect to: /wss/{task_id}?token={jwt_token}
     - Receives real-time JSON messages about task progress
     - Automatically disconnects when task completes or fails
     """

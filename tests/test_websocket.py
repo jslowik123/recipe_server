@@ -19,7 +19,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class WebSocketTestClient:
-    def __init__(self, base_url: str = "http://localhost:8000", ws_url: str = "ws://localhost:8000"):
+    def __init__(self, base_url: str = "http://localhost:8000", ws_url: str = "wss://localhost:8000"):
         self.base_url = base_url
         self.ws_url = ws_url
         self.jwt_token: Optional[str] = None
@@ -69,7 +69,7 @@ class WebSocketTestClient:
         if not self.jwt_token:
             raise ValueError("JWT token required. Call authenticate() first.")
 
-        ws_endpoint = f"{self.ws_url}/ws/{task_id}?token={self.jwt_token}"
+        ws_endpoint = f"{self.ws_url}/wss/{task_id}?token={self.jwt_token}"
         logger.info(f"🔌 Connecting to WebSocket: {ws_endpoint}")
 
         try:

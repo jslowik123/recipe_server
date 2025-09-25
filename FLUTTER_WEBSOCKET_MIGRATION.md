@@ -143,7 +143,7 @@ class WebSocketTaskService {
     if (_isConnected) return;
 
     try {
-      final uri = Uri.parse('$_wsUrl/ws/$taskId?token=$_jwtToken');
+      final uri = Uri.parse('$_wsUrl/wss/$taskId?token=$_jwtToken');
 
       _channel = WebSocketChannel.connect(uri);
       _isConnected = true;
@@ -1010,7 +1010,7 @@ static const String _wsUrl = 'wss://yourdomain.com';
 
 ```dart
 static const String _baseUrl = 'http://localhost:8000';
-static const String _wsUrl = 'ws://localhost:8000';
+static const String _wsUrl = 'wss://localhost:8000';
 ```
 
 ## 📊 WebSocket Message Types
@@ -1182,7 +1182,7 @@ Your Flutter app now has **bulletproof real-time updates** with **intelligent fa
 
 If you encounter any issues during migration:
 1. Check the backend logs: `docker-compose logs apify-web`
-2. Verify WebSocket endpoint: `https://yourdomain.com/ws/test?token=test`
+2. Verify WebSocket endpoint: `https://yourdomain.com/wss/test?token=test`
 3. Test HTTP fallback: `https://yourdomain.com/task/test-id`
 4. Review the comprehensive backend documentation in `WEBSOCKET_MIGRATION.md`
 
