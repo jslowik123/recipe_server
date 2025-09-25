@@ -9,6 +9,7 @@ import logging
 import websockets
 from typing import Optional
 import requests
+from .generate_test_jwt import get_test_token
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -236,9 +237,17 @@ async def main():
 
     # Test configuration
     TEST_TIKTOK_URL = "https://www.tiktok.com/@example/video/123456789"  # Replace with real URL
-    TEST_JWT_TOKEN = "your_jwt_token_here"  # Replace with real token
-    BASE_URL = "http://localhost:8000"  # Change for production
-    WS_URL = "ws://localhost:8000"      # Change for production
+
+    # Generate test JWT token automatically
+    try:
+        TEST_JWT_TOKEN = get_test_token()
+        logger.info("✅ Generated test JWT token")
+    except Exception as e:
+        logger.error(f"❌ Failed to generate JWT token: {e}")
+        logger.error("Make sure SUPABASE_JWT_SECRET is in your .env file")
+        return
+    BASE_URL = "https://api.recipifydata.com"  # Replace with your MAIN_DOMAIN
+    WS_URL = "wss://api.recipifydata.com"   # Replace with your MAIN_DOMAIN
 
     logger.info("🧪 Starting WebSocket Test Suite")
     logger.info("=" * 60)
@@ -276,10 +285,10 @@ if __name__ == "__main__":
 🧪 WebSocket Test Script for Apify TikTok Scraper
 
 Before running this test:
-1. Update TEST_JWT_TOKEN with a valid Supabase JWT token
+1. JWT token is generated automatically from your .env file
 2. Update TEST_TIKTOK_URL with a real TikTok URL
 3. Make sure your services are running (docker-compose up)
-4. Update BASE_URL and WS_URL if not running locally
+4. Make sure SUPABASE_JWT_SECRET is in your .env file
 
 Running test...
     """)
