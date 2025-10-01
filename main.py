@@ -4,6 +4,7 @@ import logging
 import asyncio
 from contextlib import asynccontextmanager
 from fastapi import BackgroundTasks, HTTPException, Depends, status, WebSocket, WebSocketDisconnect, Query
+from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
 from typing import List, Optional
 from tasks import scrape_tiktok_async, celery_app
@@ -106,34 +107,7 @@ async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(secur
     
 @app.get("/")
 def read_root():
-    redis_status = check_redis_connection()
-    return {
-        "name": "Apify TikTok Scraper API",
-        "version": "1.0.0",
-        "description": "Advanced TikTok content scraping service with AI-powered recipe extraction",
-        "status": "online",
-        "services": {
-            "api": "✅ Running",
-            "redis": "✅ Connected" if redis_status else "❌ Disconnected",
-            "worker": "✅ Active"
-        },
-        "endpoints": {
-            "health": "/health - Service health check",
-            "scrape": "/scrape/async - Start TikTok scraping task",
-            "status": "/task/{task_id} - Check task progress (HTTP polling fallback)",
-            "websocket": "/wss/{task_id} - Real-time task updates (WebSocket Secure)",
-            "active": "/tasks/active - View active tasks"
-        },
-        "features": [
-            "JWT Authentication",
-            "Async Task Processing",
-            "AI Recipe Extraction",
-            "Redis Queue Management",
-            "Real-time WebSocket Updates",
-            "HTTP Polling Fallback"
-        ],
-        "powered_by": "FastAPI + Celery + Redis + WebSockets"
-    }
+    return FileResponse("index.html")
 
 @app.get("/health")
 def health_check():
