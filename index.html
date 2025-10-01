@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Apify TikTok Scraper API</title>
+    <title>Resimply - Turn TikTok Videos into Recipes</title>
     <style>
         * {
             margin: 0;
@@ -23,19 +23,21 @@
             background: white;
             max-width: 600px;
             width: 100%;
-            padding: 40px;
+            padding: 50px 40px;
             border-radius: 15px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            text-align: center;
         }
         h1 {
             color: #333;
-            margin-bottom: 10px;
-            font-size: 2em;
+            margin-bottom: 15px;
+            font-size: 2.5em;
         }
         .subtitle {
             color: #666;
-            margin-bottom: 30px;
-            font-size: 1.1em;
+            margin-bottom: 40px;
+            font-size: 1.2em;
+            line-height: 1.6;
         }
         .status {
             display: inline-block;
@@ -44,36 +46,12 @@
             padding: 8px 16px;
             border-radius: 20px;
             font-weight: 600;
-            margin-bottom: 30px;
-        }
-        .features {
-            margin: 30px 0;
-        }
-        .features h2 {
-            color: #333;
-            margin-bottom: 15px;
-            font-size: 1.3em;
-        }
-        .features ul {
-            list-style: none;
-        }
-        .features li {
-            padding: 10px 0;
-            padding-left: 25px;
-            position: relative;
-        }
-        .features li:before {
-            content: "✓";
-            position: absolute;
-            left: 0;
-            color: #10b981;
-            font-weight: bold;
+            margin-bottom: 40px;
         }
         .support {
-            margin-top: 40px;
+            margin-top: 50px;
             padding-top: 30px;
             border-top: 2px solid #f0f0f0;
-            text-align: center;
         }
         .support h3 {
             color: #333;
@@ -83,43 +61,23 @@
             color: #667eea;
             text-decoration: none;
             font-weight: 600;
+            font-size: 1.1em;
         }
         .support a:hover {
             text-decoration: underline;
-        }
-        .footer {
-            margin-top: 30px;
-            text-align: center;
-            color: #999;
-            font-size: 0.9em;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>TikTok Scraper API</h1>
-        <p class="subtitle">Advanced TikTok content scraping with AI-powered recipe extraction</p>
+        <h1>Resimply</h1>
+        <p class="subtitle">Transform TikTok cooking videos into easy-to-follow recipes</p>
 
-        <span class="status">● Online</span>
-
-        <div class="features">
-            <h2>Features</h2>
-            <ul>
-                <li>Async task processing with Celery</li>
-                <li>Real-time WebSocket updates</li>
-                <li>AI-powered recipe extraction</li>
-                <li>JWT authentication</li>
-                <li>Redis queue management</li>
-            </ul>
-        </div>
+        <span class="status">● Service Online</span>
 
         <div class="support">
             <h3>Need Help?</h3>
             <p>Contact us at <a href="mailto:contact@resimply.app">contact@resimply.app</a></p>
-        </div>
-
-        <div class="footer">
-            <p>Powered by FastAPI, Celery & Redis</p>
         </div>
     </div>
 </body>
