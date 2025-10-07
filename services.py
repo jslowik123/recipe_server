@@ -904,6 +904,7 @@ class SupabaseService:
         self,
         thumbnail_url: str,
         recipe_id: str,
+        user_id: str,
         jwt_token: Optional[str] = None
     ) -> Optional[str]:
         """
@@ -912,6 +913,7 @@ class SupabaseService:
         Args:
             thumbnail_url: TikTok cover/thumbnail URL
             recipe_id: Unique recipe ID for filename
+            user_id: User ID for RLS policy
             jwt_token: JWT token for authenticated upload
 
         Returns:
@@ -922,9 +924,18 @@ class SupabaseService:
             return None
 
         try:
-            # Set authorization if JWT provided
+            # Create authenticated client with JWT token
             if jwt_token:
-                self.client.auth._headers['Authorization'] = f'Bearer {jwt_token}'
+                # Create a new client with the JWT token for this upload
+                auth_client = create_client(
+                    config.supabase_url,
+                    config.supabase_key
+                )
+                auth_client.postgrest.auth(jwt_token)
+                logger.info(f"🔐 Created authenticated client for user_id: {user_id}")
+            else:
+                auth_client = self.client
+                logger.warning("⚠️ No JWT token provided, using default client")
 
             # Download thumbnail from TikTok
             logger.info(f"📥 Downloading thumbnail from: {thumbnail_url}")
@@ -947,18 +958,18 @@ class SupabaseService:
             elif 'webp' in content_type:
                 extension = 'webp'
 
-            # Upload to Supabase Storage
-            file_path = f"{recipe_id}.{extension}"
+            # Upload to Supabase Storage with user_id in path for RLS
+            file_path = f"{user_id}/{recipe_id}.{extension}"
             logger.info(f"📤 Uploading thumbnail to Supabase Storage: {self.storage_bucket}/{file_path}")
 
-            upload_response = self.client.storage.from_(self.storage_bucket).upload(
+            upload_response = auth_client.storage.from_(self.storage_bucket).upload(
                 path=file_path,
                 file=thumbnail_data,
                 file_options={"content-type": content_type, "upsert": "true"}
             )
 
             # Get public URL (will work with RLS for authenticated users)
-            public_url = self.client.storage.from_(self.storage_bucket).get_public_url(file_path)
+            public_url = auth_client.storage.from_(self.storage_bucket).get_public_url(file_path)
             logger.info(f"✅ Thumbnail uploaded successfully: {public_url}")
 
             return public_url
@@ -1034,6 +1045,7 @@ class SupabaseService:
                     thumbnail_storage_url = await self.upload_thumbnail(
                         thumbnail_url=thumbnail_url,
                         recipe_id=str(recipe_id),
+                        user_id=user_id,
                         jwt_token=jwt_token
                     )
 
