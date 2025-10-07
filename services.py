@@ -931,7 +931,8 @@ class SupabaseService:
                     config.supabase_url,
                     config.supabase_key
                 )
-                auth_client.postgrest.auth(jwt_token)
+                # Set authorization header for storage operations
+                auth_client.storage._client.headers['Authorization'] = f'Bearer {jwt_token}'
                 logger.info(f"🔐 Created authenticated client for user_id: {user_id}")
             else:
                 auth_client = self.client
