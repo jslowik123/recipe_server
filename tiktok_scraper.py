@@ -106,6 +106,16 @@ class TikTokScraper:
                         "has_text": bool(video_data.get("text"))
                     })
 
+                # Step 2.5: Extract thumbnail URL
+                logger.info("📸 Extracting thumbnail URL...")
+                video_data["thumbnail_url"] = self.video_processor.extract_thumbnail_url(item)
+
+                if self.task_logger:
+                    self.task_logger.log("INFO", "Thumbnail URL extrahiert", {
+                        "has_thumbnail": bool(video_data.get("thumbnail_url")),
+                        "thumbnail_url": video_data.get("thumbnail_url", "None")
+                    })
+
                 # Step 3: Extract subtitles
                 logger.info("📝 Extracting subtitles...")
                 if self.task_logger:

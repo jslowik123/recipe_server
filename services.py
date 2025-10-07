@@ -149,6 +149,16 @@ class VideoProcessor:
 
             logger.warning("⚠️ All frame extraction methods failed, returning empty list")
             return []
+
+    def extract_thumbnail_url(self, item: Dict[str, Any]) -> Optional[str]:
+        """Extract thumbnail/cover URL from TikTok video metadata"""
+        if "videoMeta" in item and item["videoMeta"] and "coverUrl" in item["videoMeta"]:
+            cover_url = item["videoMeta"]["coverUrl"]
+            logger.info(f"📸 Found thumbnail URL: {cover_url}")
+            return cover_url
+
+        logger.warning("⚠️ No thumbnail URL found in video metadata")
+        return None
     
     def _get_video_url(self, item: Dict[str, Any]) -> Optional[str]:
         """Extract video download URL from various possible locations in item"""
@@ -887,13 +897,82 @@ class SupabaseService:
             config.supabase_url,
             config.supabase_key  # This should be the anon key
         )
+        self.storage_bucket = "recipe-thumbnails"
         logger.info(f"🗄️ Supabase client initialized for URL: {config.supabase_url}")
 
-    def upload_recipe(
+    async def upload_thumbnail(
+        self,
+        thumbnail_url: str,
+        recipe_id: str,
+        jwt_token: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        Download thumbnail from TikTok and upload to Supabase Storage
+
+        Args:
+            thumbnail_url: TikTok cover/thumbnail URL
+            recipe_id: Unique recipe ID for filename
+            jwt_token: JWT token for authenticated upload
+
+        Returns:
+            Public URL of uploaded thumbnail, or None if failed
+        """
+        if not thumbnail_url:
+            logger.warning("⚠️ No thumbnail URL provided")
+            return None
+
+        try:
+            # Set authorization if JWT provided
+            if jwt_token:
+                self.client.auth._headers['Authorization'] = f'Bearer {jwt_token}'
+
+            # Download thumbnail from TikTok
+            logger.info(f"📥 Downloading thumbnail from: {thumbnail_url}")
+            async with aiohttp.ClientSession() as session:
+                async with session.get(thumbnail_url, headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                    if response.status != 200:
+                        logger.error(f"❌ Failed to download thumbnail: HTTP {response.status}")
+                        return None
+
+                    thumbnail_data = await response.read()
+                    content_type = response.headers.get('Content-Type', 'image/jpeg')
+                    logger.info(f"✅ Downloaded thumbnail: {len(thumbnail_data)} bytes, type: {content_type}")
+
+            # Determine file extension
+            extension = 'jpg'
+            if 'png' in content_type:
+                extension = 'png'
+            elif 'webp' in content_type:
+                extension = 'webp'
+
+            # Upload to Supabase Storage
+            file_path = f"{recipe_id}.{extension}"
+            logger.info(f"📤 Uploading thumbnail to Supabase Storage: {self.storage_bucket}/{file_path}")
+
+            upload_response = self.client.storage.from_(self.storage_bucket).upload(
+                path=file_path,
+                file=thumbnail_data,
+                file_options={"content-type": content_type, "upsert": "true"}
+            )
+
+            # Get public URL (will work with RLS for authenticated users)
+            public_url = self.client.storage.from_(self.storage_bucket).get_public_url(file_path)
+            logger.info(f"✅ Thumbnail uploaded successfully: {public_url}")
+
+            return public_url
+
+        except Exception as e:
+            logger.error(f"❌ Failed to upload thumbnail: {e}")
+            return None
+
+    async def upload_recipe(
         self,
         user_id: str,
         recipe_data: Dict[str, Any],
         original_url: str,
+        thumbnail_url: Optional[str] = None,
         jwt_token: Optional[str] = None
     ) -> Dict[str, Any]:
         """
@@ -903,6 +982,7 @@ class SupabaseService:
             user_id: The authenticated user ID from JWT
             recipe_data: Processed recipe data from OpenAI
             original_url: Original TikTok video URL
+            thumbnail_url: Optional TikTok thumbnail URL to upload
             jwt_token: JWT token for user authentication
 
         Returns:
@@ -926,7 +1006,7 @@ class SupabaseService:
             logger.info(f"🔍 Debug: processed_recipe keys: {list(recipe.keys()) if isinstance(recipe, dict) else 'Not a dict'}")
             logger.info(f"🔍 Debug: recipe content preview: {str(recipe)[:200]}...")
 
-            # Prepare recipe data for Supabase
+            # Prepare recipe data for Supabase (without thumbnail_url first)
             recipe_record = {
                 'name': recipe.get('title', 'Untitled Recipe')[:255],  # Truncate to prevent DB errors
                 'description': recipe.get('title', 'Extracted recipe from TikTok')[:255],
@@ -945,7 +1025,32 @@ class SupabaseService:
 
             if response.data and len(response.data) > 0:
                 created_recipe = response.data[0]
-                logger.info(f"✅ Successfully uploaded recipe to Supabase: ID={created_recipe.get('id')}")
+                recipe_id = created_recipe.get('id')
+                logger.info(f"✅ Successfully uploaded recipe to Supabase: ID={recipe_id}")
+
+                # Upload thumbnail if URL provided
+                if thumbnail_url and recipe_id:
+                    logger.info(f"📸 Uploading thumbnail for recipe {recipe_id}")
+                    thumbnail_storage_url = await self.upload_thumbnail(
+                        thumbnail_url=thumbnail_url,
+                        recipe_id=str(recipe_id),
+                        jwt_token=jwt_token
+                    )
+
+                    # Update recipe with thumbnail URL
+                    if thumbnail_storage_url:
+                        update_response = self.client.table('recipes').update({
+                            'thumbnail_url': thumbnail_storage_url
+                        }).eq('id', recipe_id).execute()
+
+                        if update_response.data and len(update_response.data) > 0:
+                            created_recipe = update_response.data[0]
+                            logger.info(f"✅ Updated recipe with thumbnail URL: {thumbnail_storage_url}")
+                        else:
+                            logger.warning("⚠️ Failed to update recipe with thumbnail URL")
+                    else:
+                        logger.warning("⚠️ Thumbnail upload failed, recipe saved without thumbnail")
+
                 return created_recipe
             else:
                 logger.error("❌ Supabase upload failed: No data returned")
