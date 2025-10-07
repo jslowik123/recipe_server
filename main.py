@@ -110,6 +110,7 @@ def read_root():
     return FileResponse("index.html")
 
 @app.get("/health")
+@app.head("/health")
 def health_check():
     return {
         "status": "healthy",
