@@ -1,206 +1,109 @@
-# Recipify API
+# Rezept-Extraktions Backend
 
-A scalable FastAPI-based microservice that automatically extracts recipes from TikTok videos using AI vision and NLP. Built with modern async/await patterns, real-time WebSocket updates, and distributed task processing.
+Backend-API für eine Mobile App, die automatisch Rezepte aus TikTok-Videos extrahiert. Die App sendet eine TikTok-URL, das Backend analysiert das Video mit KI und liefert strukturierte Rezeptdaten zurück.
 
-## 🎯 Key Features
+## Funktionsweise
 
-- **AI-Powered Recipe Extraction**: Analyzes video frames using GPT-4 Vision to extract ingredients, steps, and metadata
-- **Asynchronous Processing**: Celery-based distributed task queue for handling multiple scraping jobs concurrently
-- **Real-time Updates**: WebSocket support for live progress tracking during recipe extraction
-- **Cloud Storage Integration**: Automatic upload to Supabase Storage with Row-Level Security (RLS)
-- **Production-Ready**: Docker Compose setup with Redis, health checks, and proper logging
+Das System extrahiert automatisch aus TikTok-Kochvideos:
+- Zutatenliste
+- Schritt-für-Schritt Anleitung
+- Metadaten (Kochzeit, Portionen, etc.)
+- Video-Thumbnail
 
-## 🏗️ Architecture
+Die Analyse erfolgt durch GPT-4 Vision, das einzelne Frames des Videos auswertet.
 
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│   FastAPI   │────▶│   Celery     │────▶│   Apify     │
-│   Server    │     │   Workers    │     │   Scraper   │
-└──────┬──────┘     └──────┬───────┘     └─────────────┘
-       │                   │
-       │              ┌────▼─────┐
-       │              │  Redis   │
-       │              │ Pub/Sub  │
-       │              └──────────┘
-       │
-   ┌───▼────────┐    ┌──────────────┐
-   │ WebSocket  │    │   Supabase   │
-   │  Manager   │    │   Storage    │
-   └────────────┘    └──────────────┘
-```
+## Tech Stack
 
-## 🚀 Tech Stack
+- **FastAPI** - REST API und WebSocket Server
+- **Celery + Redis** - Asynchrone Task-Queue für Video-Verarbeitung
+- **OpenAI GPT-4 Vision** - KI-gestützte Rezept-Extraktion
+- **Supabase** - Datenbank und File Storage
+- **Docker Compose** - Container-Orchestrierung
+- **OpenCV** - Video-Frame-Extraktion
 
-- **Backend**: FastAPI, Python 3.11+
-- **Task Queue**: Celery with Redis broker
-- **AI/ML**: OpenAI GPT-4 Vision, OpenCV for video processing
-- **Storage**: Supabase (PostgreSQL + S3-compatible storage)
-- **Web Scraping**: Apify TikTok Scraper
-- **Infrastructure**: Docker, Docker Compose, Nginx
+## Ablauf
 
-## 📦 Project Structure
+1. Mobile App sendet TikTok-URL an `/scrape/async` Endpoint
+2. Celery Worker lädt Video über Apify herunter
+3. Key-Frames werden aus dem Video extrahiert (OpenCV)
+4. Frames werden an GPT-4 Vision mit Rezept-Prompt gesendet
+5. KI-Response wird in strukturiertes Rezept-Format geparst
+6. Thumbnail wird zu Supabase Storage hochgeladen
+7. Rezept wird in Datenbank gespeichert
+8. Rezept-ID wird an App zurückgegeben
 
-```
-apify/
-├── src/                      # Source code
-│   ├── config.py            # Configuration management
-│   ├── services.py          # Service layer (Apify, OpenAI, Supabase)
-│   ├── tasks.py             # Celery task definitions
-│   ├── tiktok_scraper.py    # Main scraping orchestrator
-│   ├── websocket_manager.py # WebSocket connection manager
-│   ├── prompt_service.py    # AI prompt templates
-│   ├── detailed_logger.py   # Structured logging
-│   └── exceptions.py        # Custom exceptions
-├── tests/                   # Unit and integration tests
-├── scripts/                 # Deployment scripts
-├── main.py                  # FastAPI application entry point
-├── docker-compose.*.yml     # Docker orchestration
-└── requirements.txt         # Python dependencies
-```
+Live-Updates während der Verarbeitung über WebSocket-Verbindung.
 
-## 🔧 Installation
+## Schnellstart
 
-### Prerequisites
-
-- Python 3.11+
-- Docker & Docker Compose
-- OpenAI API key
-- Apify API token
-- Supabase project
-
-### Local Development
-
-1. Clone the repository:
 ```bash
-git clone <repository-url>
-cd apify
-```
-
-2. Create virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-3. Install dependencies:
-```bash
+# Dependencies installieren
 pip install -r requirements.txt
-```
 
-4. Configure environment variables:
-```bash
+# Umgebungsvariablen konfigurieren
 cp .env.example .env
-# Edit .env with your API keys
-```
+# API-Keys in .env eintragen
 
-5. Start infrastructure services:
-```bash
+# Services starten
 docker-compose -f docker-compose.infrastructure.yml up -d
-```
 
-6. Run the application:
-```bash
+# API starten
 python main.py
 ```
+## API-Nutzung
 
-### Docker Deployment
-
+**Scraping starten:**
 ```bash
-# Start all services
-docker-compose -f docker-compose.infrastructure.yml up -d
-docker-compose -f docker-compose.app.yml up -d
-```
-
-## 📡 API Endpoints
-
-### POST `/scrape/async`
-Start asynchronous recipe extraction from TikTok video.
-
-**Request:**
-```json
+POST /scrape/async
 {
   "url": "https://www.tiktok.com/@user/video/123",
   "language": "de"
 }
 ```
 
-**Response:**
-```json
-{
-  "task_id": "abc-123-def",
-  "status": "PENDING",
-  "message": "Started scraping TikTok video"
-}
-```
-
-### GET `/task/{task_id}`
-Check task status and retrieve results.
-
-### WebSocket `/wss/{task_id}?token={jwt}`
-Real-time updates for task progress.
-
-### GET `/health`
-Health check endpoint for monitoring.
-
-## 🔐 Authentication
-
-Uses Supabase JWT tokens for authentication. Include JWT token in:
-- HTTP: `Authorization: Bearer <token>`
-- WebSocket: Query parameter `?token=<jwt_token>`
-
-## 🧪 Testing
-
+**Status abfragen:**
 ```bash
-# Run all tests
-pytest
-
-# Run specific test file
-pytest tests/test_supabase_upload.py
-
-# Run with coverage
-pytest --cov=src tests/
+GET /task/{task_id}
 ```
 
-## 📊 Monitoring & Logging
+**Live-Updates:**
+```
+WebSocket: /wss/{task_id}?token={jwt}
+```
 
-- Structured JSON logging for all operations
-- Redis-based task progress tracking
-- Health check endpoints for container orchestration
-- Celery Flower dashboard (optional)
+## Projekt-Struktur
 
-## 🔄 Workflow
+```
+src/
+├── main.py              # FastAPI Applikation
+├── tasks.py             # Celery Task-Definitionen
+├── services.py          # Service-Layer (Apify, OpenAI, Supabase)
+├── tiktok_scraper.py    # Haupt-Scraping-Logik
+└── websocket_manager.py # WebSocket-Handler
+```
 
-1. User submits TikTok URL via API
-2. Celery worker downloads video via Apify
-3. Video frames extracted using OpenCV
-4. GPT-4 Vision analyzes frames for recipe content
-5. Structured recipe data created
-6. Thumbnail generated and uploaded to Supabase
-7. Recipe metadata stored in PostgreSQL
-8. Real-time progress sent via WebSocket
+## Docker-Architektur
 
-## 🚧 Known Limitations
+Das System läuft produktiv auf einem VPS mit Docker Compose und besteht aus mehreren Services:
 
-- Requires valid TikTok video URLs
-- Processing time depends on video length (typically 30-60s)
-- Rate limited by OpenAI API quotas
+**Infrastructure Stack** (`docker-compose.infrastructure.yml`):
+- **Redis** - Message Broker für Celery und Pub/Sub für WebSockets
+- **Persistenz** - Redis Volumes für Queue-State
 
-## 🤝 Contributing
+**Application Stack** (`docker-compose.app.yml`):
+- **FastAPI Server** - REST API und WebSocket Endpoints
+- **Celery Worker** - Video-Verarbeitung und KI-Analyse
+- **Nginx** - Reverse Proxy mit WebSocket-Support
 
-This is a portfolio project. Feel free to fork and adapt for your own use.
+Alle Services sind über Docker Networks verbunden. Redis dient sowohl als Celery Message Broker für asynchrone Tasks als auch für WebSocket Pub/Sub zum Broadcasting von Progress-Updates.
 
-## 📝 License
+**CI/CD**: GitHub Actions deployed automatisch auf den VPS bei jedem Push auf `main`.
 
-MIT License - See LICENSE file for details
+## Anforderungen
 
-## 👤 Author
-
-Jasper Slowik
-- Email: jasper.slowik@icloud.com
-- GitHub: [Your GitHub Profile]
-
-## 🙏 Acknowledgments
-
-- OpenAI for GPT-4 Vision API
-- Apify for TikTok scraping infrastructure
-- Supabase for backend services
+- Python 3.11+
+- Docker & Docker Compose
+- OpenAI API Key
+- Apify API Token
+- Supabase Projekt
+- VPS mit Docker (für Production)
