@@ -64,3 +64,14 @@ celerybeat.pid
 htmlcov/
 .coverage
 .pytest_cache/
+
+# Internal documentation
+*_MIGRATION.md
+INFRASTRUKTUR.md
+LOGGING_README.md
+SUPABASE_SETUP.md
+supabase_storage_rls.sql
+
+# Test files
+enhanced_recipe_test.py
+test_*.py

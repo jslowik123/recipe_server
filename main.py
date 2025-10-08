@@ -7,12 +7,12 @@ from fastapi import BackgroundTasks, HTTPException, Depends, status, WebSocket, 
 from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
 from typing import List, Optional
-from tasks import scrape_tiktok_async, celery_app
-from config import config
+from src.tasks import scrape_tiktok_async, celery_app
+from src.config import config
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from datetime import datetime
-from websocket_manager import initialize_websocket_manager, get_websocket_manager
+from src.websocket_manager import initialize_websocket_manager, get_websocket_manager
 
 logger = logging.getLogger(__name__)
 

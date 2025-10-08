@@ -4,9 +4,9 @@ Refactored TikTok scraper using service pattern
 import logging
 from typing import Dict, Any, Optional
 
-from services import ApifyService, VideoProcessor, OpenAIService
-from exceptions import TikTokScrapingError
-from detailed_logger import TaskLogger
+from src.services import ApifyService, VideoProcessor, OpenAIService
+from src.exceptions import TikTokScrapingError
+from src.detailed_logger import TaskLogger
 
 logger = logging.getLogger(__name__)
 

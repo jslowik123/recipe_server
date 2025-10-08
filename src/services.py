@@ -20,12 +20,12 @@ from openai import OpenAI
 from supabase import create_client, Client
 from datetime import datetime
 
-from config import config
-from exceptions import (
+from src.config import config
+from src.exceptions import (
     ApifyError, OpenAIError, VideoProcessingError,
     VideoDownloadError, FrameExtractionError
 )
-from prompt_service import prompt_service
+from src.prompt_service import prompt_service
 
 logger = logging.getLogger(__name__)
 

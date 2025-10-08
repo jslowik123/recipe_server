@@ -8,11 +8,11 @@ from celery.exceptions import Ignore
 from typing import List
 from pydantic import BaseModel
 
-from config import config
-from tiktok_scraper import TikTokScraper
-from exceptions import TikTokScrapingError
-from detailed_logger import get_task_logger, finalize_task_log
-from services import SupabaseService
+from src.config import config
+from src.tiktok_scraper import TikTokScraper
+from src.exceptions import TikTokScrapingError
+from src.detailed_logger import get_task_logger, finalize_task_log
+from src.services import SupabaseService
 
 # Configure logging (console only)
 logging.basicConfig(

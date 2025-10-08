@@ -25,11 +25,9 @@ jobs:
           debug: true
           script: |
             cd ${{ secrets.REPO_PATH }}
-            
-            # Code aktualisieren
+
             git fetch https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git main
             git reset --hard FETCH_HEAD
-            
-            # Deployment ausführen (nur App-Container!)
-            chmod +x deploy-app.sh
-            ./deploy-app.sh
+
+            chmod +x scripts/deploy-app.sh
+            ./scripts/deploy-app.sh
