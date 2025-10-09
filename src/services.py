@@ -923,6 +923,9 @@ class SupabaseService:
             logger.warning("⚠️ No thumbnail URL provided")
             return None
 
+        logger.info(f"🖼️ Starting thumbnail upload process for recipe_id: {recipe_id}")
+        logger.info(f"📍 Thumbnail source URL: {thumbnail_url}")
+
         try:
             # Create authenticated client with JWT token
             if jwt_token:
@@ -962,6 +965,7 @@ class SupabaseService:
             # Upload to Supabase Storage with user_id in path for RLS
             file_path = f"{user_id}/{recipe_id}.{extension}"
             logger.info(f"📤 Uploading thumbnail to Supabase Storage: {self.storage_bucket}/{file_path}")
+            logger.info(f"📊 Thumbnail file size: {len(thumbnail_data) / 1024:.2f} KB, type: {content_type}")
 
             upload_response = auth_client.storage.from_(self.storage_bucket).upload(
                 path=file_path,
@@ -969,14 +973,20 @@ class SupabaseService:
                 file_options={"content-type": content_type, "upsert": "true"}
             )
 
+            logger.info(f"✅ Thumbnail upload to storage bucket completed")
+
             # Get public URL (will work with RLS for authenticated users)
             public_url = auth_client.storage.from_(self.storage_bucket).get_public_url(file_path)
-            logger.info(f"✅ Thumbnail uploaded successfully: {public_url}")
+            logger.info(f"🔗 Thumbnail public URL generated: {public_url}")
+            logger.info(f"✅ Thumbnail upload process completed successfully")
 
             return public_url
 
         except Exception as e:
             logger.error(f"❌ Failed to upload thumbnail: {e}")
+            logger.error(f"📋 Error details - recipe_id: {recipe_id}, user_id: {user_id}")
+            import traceback
+            logger.error(f"🔍 Full traceback: {traceback.format_exc()}")
             return None
 
     async def upload_recipe(

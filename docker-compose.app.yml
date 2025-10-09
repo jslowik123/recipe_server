@@ -39,7 +39,7 @@ services:
       - APIFY_API_KEY=${APIFY_API_KEY}
     volumes:
       - .:/app
-    command: celery -A tasks worker --loglevel=info --pool=gevent --concurrency=20
+    command: celery -A src. tasks worker --loglevel=info --pool=gevent --concurrency=20
     restart: unless-stopped
     depends_on:
       - redis-check

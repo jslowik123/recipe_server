@@ -17,7 +17,10 @@ class DetailedFileLogger:
     def __init__(self, task_id: str, base_dir: str = "./logs"):
         self.task_id = task_id
         self.base_dir = base_dir
-        self.log_file = os.path.join(base_dir, f"{task_id}.txt")
+
+        # Erstelle Dateinamen mit Datum und Uhrzeit
+        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        self.log_file = os.path.join(base_dir, f"{task_id}_{timestamp}.txt")
         self.lock = Lock()
 
         # Erstelle logs Verzeichnis falls es nicht existiert
