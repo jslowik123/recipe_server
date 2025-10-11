@@ -930,6 +930,7 @@ class SupabaseService:
             # Create authenticated client with JWT token
             if jwt_token:
                 # Create a new client with the JWT token for this upload
+                logger.info(f"🔐 Creating authenticated client with JWT token...")
                 auth_client = create_client(
                     config.supabase_url,
                     config.supabase_key
@@ -942,13 +943,15 @@ class SupabaseService:
                 logger.warning("⚠️ No JWT token provided, using default client")
 
             # Download thumbnail from TikTok
-            logger.info(f"📥 Downloading thumbnail from: {thumbnail_url}")
+            logger.info(f"📥 Starting download from: {thumbnail_url[:100]}...")
             async with aiohttp.ClientSession() as session:
                 async with session.get(thumbnail_url, headers={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                 }, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                    logger.info(f"📥 HTTP Response status: {response.status}")
                     if response.status != 200:
                         logger.error(f"❌ Failed to download thumbnail: HTTP {response.status}")
+                        logger.error(f"❌ Response headers: {dict(response.headers)}")
                         return None
 
                     thumbnail_data = await response.read()
@@ -967,20 +970,29 @@ class SupabaseService:
             logger.info(f"📤 Uploading thumbnail to Supabase Storage: {self.storage_bucket}/{file_path}")
             logger.info(f"📊 Thumbnail file size: {len(thumbnail_data) / 1024:.2f} KB, type: {content_type}")
 
-            upload_response = auth_client.storage.from_(self.storage_bucket).upload(
-                path=file_path,
-                file=thumbnail_data,
-                file_options={"content-type": content_type, "upsert": "true"}
-            )
-
-            logger.info(f"✅ Thumbnail upload to storage bucket completed")
+            try:
+                upload_response = auth_client.storage.from_(self.storage_bucket).upload(
+                    path=file_path,
+                    file=thumbnail_data,
+                    file_options={"content-type": content_type, "upsert": "true"}
+                )
+                logger.info(f"✅ Thumbnail upload to storage bucket completed")
+                logger.info(f"🔍 Upload response: {upload_response}")
+            except Exception as upload_error:
+                logger.error(f"❌ Storage upload failed: {upload_error}")
+                logger.error(f"🔍 Upload error traceback: {traceback.format_exc()}")
+                return None
 
             # Get public URL (will work with RLS for authenticated users)
-            public_url = auth_client.storage.from_(self.storage_bucket).get_public_url(file_path)
-            logger.info(f"🔗 Thumbnail public URL generated: {public_url}")
-            logger.info(f"✅ Thumbnail upload process completed successfully")
-
-            return public_url
+            try:
+                public_url = auth_client.storage.from_(self.storage_bucket).get_public_url(file_path)
+                logger.info(f"🔗 Thumbnail public URL generated: {public_url}")
+                logger.info(f"✅ Thumbnail upload process completed successfully")
+                return public_url
+            except Exception as url_error:
+                logger.error(f"❌ Failed to generate public URL: {url_error}")
+                logger.error(f"🔍 URL generation traceback: {traceback.format_exc()}")
+                return None
 
         except Exception as e:
             logger.error(f"❌ Failed to upload thumbnail: {e}")
@@ -1052,16 +1064,25 @@ class SupabaseService:
 
                 # Upload thumbnail if URL provided
                 if thumbnail_url and recipe_id:
-                    logger.info(f"📸 Uploading thumbnail for recipe {recipe_id}")
-                    thumbnail_storage_url = await self.upload_thumbnail(
-                        thumbnail_url=thumbnail_url,
-                        recipe_id=str(recipe_id),
-                        user_id=user_id,
-                        jwt_token=jwt_token
-                    )
+                    logger.info(f"📸 Starting thumbnail upload for recipe {recipe_id}")
+                    logger.info(f"📍 Thumbnail URL to upload: {thumbnail_url[:100]}...")
+
+                    try:
+                        thumbnail_storage_url = await self.upload_thumbnail(
+                            thumbnail_url=thumbnail_url,
+                            recipe_id=str(recipe_id),
+                            user_id=user_id,
+                            jwt_token=jwt_token
+                        )
+                        logger.info(f"🔍 Thumbnail upload returned: {thumbnail_storage_url}")
+                    except Exception as thumbnail_error:
+                        logger.error(f"❌ Exception during thumbnail upload: {thumbnail_error}")
+                        logger.error(f"🔍 Traceback: {traceback.format_exc()}")
+                        thumbnail_storage_url = None
 
                     # Update recipe with thumbnail URL
                     if thumbnail_storage_url:
+                        logger.info(f"✅ Thumbnail uploaded successfully, updating recipe with URL: {thumbnail_storage_url[:100]}...")
                         update_response = self.client.table('recipes').update({
                             'thumbnail_url': thumbnail_storage_url
                         }).eq('id', recipe_id).execute()
@@ -1072,7 +1093,13 @@ class SupabaseService:
                         else:
                             logger.warning("⚠️ Failed to update recipe with thumbnail URL")
                     else:
-                        logger.warning("⚠️ Thumbnail upload failed, recipe saved without thumbnail")
+                        logger.warning("⚠️ Thumbnail upload returned None - recipe saved without thumbnail")
+                        logger.warning(f"⚠️ Original thumbnail URL was: {thumbnail_url[:100]}...")
+                else:
+                    if not thumbnail_url:
+                        logger.warning("⚠️ No thumbnail URL provided")
+                    if not recipe_id:
+                        logger.warning("⚠️ No recipe ID available")
 
                 return created_recipe
             else:
