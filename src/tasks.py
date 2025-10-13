@@ -188,32 +188,22 @@ def scrape_tiktok_async(self, post_url: str, language: str, user_id: str, jwt_to
         try:
             supabase_service = SupabaseService()
 
-            # Extract thumbnail URL from result
-            thumbnail_url = None
-            if isinstance(result, dict) and 'result' in result:
-                thumbnail_url = result['result'].get('thumbnail_url')
-
             task_logger.log("INFO", "Bereite Supabase-Upload vor", {
-                "has_thumbnail_url": bool(thumbnail_url),
-                "thumbnail_url": thumbnail_url if thumbnail_url else "Keine Thumbnail-URL gefunden",
                 "user_id": user_id
             })
 
-            # Upload recipe with thumbnail
+            # Upload recipe
             import asyncio
             uploaded_recipe = asyncio.run(supabase_service.upload_recipe(
                 user_id=user_id,
                 recipe_data=result,
                 original_url=post_url,
-                thumbnail_url=thumbnail_url,
                 jwt_token=jwt_token
             ))
 
             task_logger.log_success("Rezept erfolgreich zu Supabase hochgeladen", {
                 "recipe_id": uploaded_recipe.get('id'),
                 "recipe_name": uploaded_recipe.get('name'),
-                "thumbnail_uploaded": 'thumbnail_url' in uploaded_recipe and uploaded_recipe['thumbnail_url'] is not None,
-                "thumbnail_storage_url": uploaded_recipe.get('thumbnail_url', 'Kein Thumbnail hochgeladen'),
                 "user_id": user_id
             })
 
