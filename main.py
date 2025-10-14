@@ -103,8 +103,8 @@ def verify_token_sync(credentials: HTTPAuthorizationCredentials) -> str:
 async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Async wrapper for JWT verification (for dependency injection)"""
     return verify_token_sync(credentials)
-    
-    
+
+@app.head("/")
 @app.get("/")
 def read_root():
     return FileResponse("index.html")
