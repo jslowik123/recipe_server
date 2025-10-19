@@ -3,8 +3,6 @@ Detaillierter Logger für TikTok Scraping Pipeline
 Schreibt alle Logs mit task_id als Dateiname in txt-Dateien im lokalen Verzeichnis
 """
 import os
-import logging
-import time
 from datetime import datetime
 from typing import Optional, Dict, Any
 from threading import Lock

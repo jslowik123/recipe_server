@@ -21,7 +21,7 @@ from supabase import create_client, Client
 from datetime import datetime
 
 from src.config import config
-from src.exceptions import (
+from src.helper.exceptions import (
     ApifyError, OpenAIError, VideoProcessingError,
     VideoDownloadError, FrameExtractionError
 )

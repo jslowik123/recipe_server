@@ -5,12 +5,10 @@ import json
 import redis
 from celery import Celery, states
 from celery.exceptions import Ignore
-from typing import List
-from pydantic import BaseModel
 
 from src.config import config
 from src.tiktok_scraper import TikTokScraper
-from src.exceptions import TikTokScrapingError
+from src.helper.exceptions import TikTokScrapingError
 from src.detailed_logger import get_task_logger, finalize_task_log
 from src.services import SupabaseService
 

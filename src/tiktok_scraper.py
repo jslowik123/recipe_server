@@ -5,7 +5,7 @@ import logging
 from typing import Dict, Any, Optional
 
 from src.services import ApifyService, VideoProcessor, OpenAIService
-from src.exceptions import TikTokScrapingError
+from src.helper.exceptions import TikTokScrapingError
 from src.detailed_logger import TaskLogger
 
 logger = logging.getLogger(__name__)
