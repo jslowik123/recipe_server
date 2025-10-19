@@ -3,19 +3,20 @@ import uvicorn
 import logging
 import asyncio
 from contextlib import asynccontextmanager
-from fastapi import BackgroundTasks, HTTPException, Depends, status, WebSocket, WebSocketDisconnect, Query
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi import HTTPException, Depends, status, WebSocket, WebSocketDisconnect, Query, Request
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from typing import List, Optional
 from src.tasks import scrape_tiktok_async, celery_app
 from src.config import config
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
-from datetime import datetime
 from src.websocket_manager import initialize_websocket_manager, get_websocket_manager
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from src.helper.rate_limit import rate_limit_handler, get_user_identifier
+from src.helper.verify_token import verify_token, verify_token_sync, security
 
 logger = logging.getLogger(__name__)
-
 
 @asynccontextmanager
 async def lifespan(app: fastapi.FastAPI):
@@ -45,13 +46,18 @@ async def lifespan(app: fastapi.FastAPI):
     await ws_manager.cleanup()
     logger.info("✅ Application shutdown complete")
 
-
 app = fastapi.FastAPI(
     title="Apify TikTok Scraper with WebSockets",
     version="2.0.0",
     lifespan=lifespan
 )
-security = HTTPBearer()
+# Rate limiting configuration
+limiter = Limiter(key_func=get_user_identifier)
+app.state.limiter = limiter  # type: ignore[attr-defined]
+
+app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
+
+
 # Pydantic Models
 class TikTokScrapeRequest(BaseModel):
     url: str
@@ -62,47 +68,6 @@ class TaskResponse(BaseModel):
     status: str
     message: str
 
-
-def verify_token_sync(credentials: HTTPAuthorizationCredentials) -> str:
-    """Synchronous JWT token verification"""
-    try:
-        jwt_secret = config.supabase_jwt_secret
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="JWT Secret nicht konfiguriert",
-        )
-
-    token = credentials.credentials
-    try:
-        # JWT verifizieren
-        payload = jwt.decode(
-            token,
-            jwt_secret,
-            algorithms=["HS256"],
-            audience="authenticated",  # Muss mit Supabase übereinstimmen
-        )
-        user_id = payload.get("sub")  # Enthält die Supabase User-ID
-        if user_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Ungültiger Token",
-            )
-        return user_id
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token ist abgelaufen",
-        )
-    except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Ungültiger Token",
-        )
-
-async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Async wrapper for JWT verification (for dependency injection)"""
-    return verify_token_sync(credentials)
 
 @app.head("/")
 @app.get("/")
@@ -119,6 +84,7 @@ def health_check():
     }
 
 @app.post("/scrape/async", response_model=TaskResponse)
+@limiter.limit("1/minute")
 def scrape_tiktok_videos_async(request: TikTokScrapeRequest, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """
     Start asynchronous TikTok scraping task for a single URL
@@ -202,19 +168,6 @@ def get_task_status(task_id: str, user_id: str = Depends(verify_token)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get task status: {str(e)}")
 
-@app.get("/tasks/active")
-def get_active_tasks(user_id: str = Depends(verify_token)):
-    """
-    Get list of active tasks
-    """
-    try:
-        inspect = celery_app.control.inspect()
-        active_tasks = inspect.active()
-        return {"active_tasks": active_tasks}
-    except Exception as e:
-        return {"error": f"Failed to get active tasks: {str(e)}"}
-
-
 @app.websocket("/wss/{task_id}")
 async def websocket_task_updates(
     websocket: WebSocket,
@@ -293,7 +246,7 @@ def check_redis_connection():
         r = redis.from_url(config.redis_url)
         r.ping()
         return True
-    except:
+    except Exception as e:
         return False
 
 if __name__ == "__main__":

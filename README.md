@@ -28,9 +28,8 @@ Die Analyse erfolgt durch GPT-4 Vision, das einzelne Frames des Videos auswertet
 3. Key-Frames werden aus dem Video extrahiert (OpenCV)
 4. Frames werden an GPT-4 Vision mit Rezept-Prompt gesendet
 5. KI-Response wird in strukturiertes Rezept-Format geparst
-6. Thumbnail wird zu Supabase Storage hochgeladen
-7. Rezept wird in Datenbank gespeichert
-8. Rezept-ID wird an App zurückgegeben
+6. Rezept wird in Datenbank gespeichert
+7. Rezept-ID wird an App zurückgegeben
 
 Live-Updates während der Verarbeitung über WebSocket-Verbindung.
 
@@ -45,10 +44,8 @@ cp .env.example .env
 # API-Keys in .env eintragen
 
 # Services starten
-docker-compose -f docker-compose.infrastructure.yml up -d
-
-# API starten
-python main.py
+./scripts/setup-infra.sh
+./scripts/deploy-app.shwas 
 ```
 ## API-Nutzung
 

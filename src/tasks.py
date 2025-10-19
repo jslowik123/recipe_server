@@ -24,13 +24,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
-# Pydantic Models for simple recipe response (nur Zutaten und Schritte)
-class SimpleRecipeResponse(BaseModel):
-    ingredients: List[str]
-    steps: List[str]
-
-
 # Celery Setup
 celery_app = Celery('tasks', broker=config.redis_url, backend=config.redis_url)
 

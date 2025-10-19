@@ -3,7 +3,7 @@ Configuration management for TikTok scraping service
 """
 import os
 from dotenv import load_dotenv
-from src.exceptions import ConfigurationError
+from src.helper.exceptions import ConfigurationError
 
 # Load environment variables once
 load_dotenv()
