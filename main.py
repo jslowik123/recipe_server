@@ -85,12 +85,18 @@ def health_check():
 
 @app.post("/rate_limit_test")
 @limiter.limit("1/minute")
-def rate_limit():
-    return ("success", 200)
+def rate_limit(request: Request):
+    return {
+        "status": "healthy",
+    }
 
 @app.post("/scrape/async", response_model=TaskResponse)
 @limiter.limit("1/minute")
-def scrape_tiktok_videos_async(request: TikTokScrapeRequest, credentials: HTTPAuthorizationCredentials = Depends(security)):
+def scrape_tiktok_videos_async(
+    body: TikTokScrapeRequest,
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
     """
     Start asynchronous TikTok scraping task for a single URL
     """
@@ -100,16 +106,16 @@ def scrape_tiktok_videos_async(request: TikTokScrapeRequest, credentials: HTTPAu
         jwt_token = credentials.credentials
 
         # Validate URL
-        if not request.url or not request.url.strip():
+        if not body.url or not body.url.strip():
             raise HTTPException(status_code=422, detail="URL is required and cannot be empty")
 
         # Start the async task with JWT token
-        task = scrape_tiktok_async.delay(request.url.strip(), request.language, user_id, jwt_token)
+        task = scrape_tiktok_async.delay(body.url.strip(), body.language, user_id, jwt_token)
         
         return TaskResponse(
             task_id=task.id,
             status="PENDING",
-            message=f"Started scraping TikTok video: {request.url}. Use /task/{task.id} to check progress."
+            message=f"Started scraping TikTok video: {body.url}. Use /task/{task.id} to check progress."
         )
     except HTTPException:
         raise
