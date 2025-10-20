@@ -16,3 +16,4 @@ aiofiles
 pydantic
 supabase
 slowapi
+markdown
