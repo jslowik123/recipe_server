@@ -94,7 +94,6 @@ def rate_limit(request: Request):
 @limiter.limit("1/minute")
 def scrape_tiktok_videos_async(
     body: TikTokScrapeRequest,
-    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """
