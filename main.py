@@ -83,6 +83,11 @@ def health_check():
         "services": ["web", "redis", "worker"]
     }
 
+@app.post("/rate_limit_test")
+@limiter.limit("1/minute")
+def rate_limit():
+    return ("success", 200)
+
 @app.post("/scrape/async", response_model=TaskResponse)
 @limiter.limit("1/minute")
 def scrape_tiktok_videos_async(request: TikTokScrapeRequest, credentials: HTTPAuthorizationCredentials = Depends(security)):
