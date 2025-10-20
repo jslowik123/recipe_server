@@ -83,7 +83,7 @@ def health_check():
         "services": ["web", "redis", "worker"]
     }
 
-@app.post("/rate_limit_test")
+@app.get("/rate_limit_test")
 @limiter.limit("1/minute")
 def rate_limit(request: Request):
     return {
