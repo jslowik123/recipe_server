@@ -16,7 +16,7 @@ from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from src.helper.rate_limit import rate_limit_handler, get_user_identifier
 from src.helper.verify_token import verify_token, verify_token_sync, security
-import markdown
+from src.routes.legal import router as legal_router
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +58,9 @@ limiter = Limiter(key_func=get_user_identifier)
 app.state.limiter = limiter  # type: ignore[attr-defined]
 
 app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
+
+# Include legal routes
+app.include_router(legal_router)
 
 
 # Pydantic Models
@@ -262,186 +265,6 @@ def check_redis_connection():
     except Exception as e:
         return False
 
-
-# Legal document helpers
-def get_legal_document(doc_type: str, lang: str = "de") -> dict:
-    """
-    Load legal document from legal/{lang}/{doc_type}_content_{lang}.md
-
-    Args:
-        doc_type: Type of document (privacy_policy, terms_of_service, imprint)
-        lang: Language code (de, en)
-
-    Returns:
-        dict with content and metadata
-    """
-    # Validate inputs
-    valid_types = ["privacy_policy", "terms_of_service", "imprint"]
-    valid_langs = ["de", "en"]
-
-    if doc_type not in valid_types:
-        raise HTTPException(status_code=404, detail=f"Invalid document type. Must be one of: {', '.join(valid_types)}")
-
-    if lang not in valid_langs:
-        raise HTTPException(status_code=400, detail=f"Invalid language. Supported: {', '.join(valid_langs)}")
-
-    # Build file path using your naming convention
-    file_path = Path("legal") / lang / f"{doc_type}_content_{lang}.md"
-
-    if not file_path.exists():
-        raise HTTPException(
-            status_code=404,
-            detail=f"Document not found: {doc_type} ({lang}). Please create {file_path}"
-        )
-
-    try:
-        content = file_path.read_text(encoding="utf-8")
-        return {
-            "type": doc_type,
-            "language": lang,
-            "content": content,
-            "path": str(file_path)
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read document: {str(e)}")
-
-
-def render_legal_html(doc: dict) -> str:
-    """
-    Render legal document as HTML page
-
-    Args:
-        doc: Document dict from get_legal_document()
-
-    Returns:
-        HTML string
-    """
-    html_content = markdown.markdown(doc["content"])
-
-    # Map document types to titles
-    titles = {
-        "privacy_policy": {"de": "Datenschutzerklärung", "en": "Privacy Policy"},
-        "terms_of_service": {"de": "Nutzungsbedingungen", "en": "Terms of Service"},
-        "imprint": {"de": "Impressum", "en": "Imprint"}
-    }
-
-    title = titles.get(doc["type"], {}).get(doc["language"], "Legal Document")
-
-    return f"""<!DOCTYPE html>
-<html lang="{doc['language']}">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title}</title>
-    <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            line-height: 1.6;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            color: #333;
-        }}
-        h1 {{
-            border-bottom: 2px solid #007AFF;
-            padding-bottom: 10px;
-        }}
-        h2 {{
-            margin-top: 30px;
-            color: #007AFF;
-        }}
-        h3 {{
-            margin-top: 20px;
-        }}
-        a {{
-            color: #007AFF;
-        }}
-        @media (max-width: 600px) {{
-            body {{
-                padding: 10px;
-            }}
-        }}
-    </style>
-</head>
-<body>
-    {html_content}
-</body>
-</html>"""
-
-
-@app.get("/legal/privacy")
-def get_privacy_policy(lang: str = Query("de", regex="^(de|en)$"), format: str = Query("json", regex="^(json|html)$")):
-    """
-    Get privacy policy / Datenschutzerklärung
-
-    Query params:
-    - lang: de or en (default: de)
-    - format: json or html (default: json)
-
-    Examples:
-    - /legal/privacy?lang=de&format=html
-    - /legal/privacy?lang=en&format=json
-    """
-    doc = get_legal_document("privacy_policy", lang)
-
-    if format == "html":
-        return HTMLResponse(content=render_legal_html(doc))
-
-    return JSONResponse(content={
-        "type": doc["type"],
-        "language": doc["language"],
-        "content": doc["content"]
-    })
-
-
-@app.get("/legal/terms")
-def get_terms_of_service(lang: str = Query("de", regex="^(de|en)$"), format: str = Query("json", regex="^(json|html)$")):
-    """
-    Get terms of service / Nutzungsbedingungen
-
-    Query params:
-    - lang: de or en (default: de)
-    - format: json or html (default: json)
-
-    Examples:
-    - /legal/terms?lang=de&format=html
-    - /legal/terms?lang=en&format=json
-    """
-    doc = get_legal_document("terms_of_service", lang)
-
-    if format == "html":
-        return HTMLResponse(content=render_legal_html(doc))
-
-    return JSONResponse(content={
-        "type": doc["type"],
-        "language": doc["language"],
-        "content": doc["content"]
-    })
-
-
-@app.get("/legal/imprint")
-def get_imprint(lang: str = Query("de", regex="^(de|en)$"), format: str = Query("json", regex="^(json|html)$")):
-    """
-    Get imprint / Impressum
-
-    Query params:
-    - lang: de or en (default: de)
-    - format: json or html (default: json)
-
-    Examples:
-    - /legal/imprint?lang=de&format=html
-    - /legal/imprint?lang=en&format=json
-    """
-    doc = get_legal_document("imprint", lang)
-
-    if format == "html":
-        return HTMLResponse(content=render_legal_html(doc))
-
-    return JSONResponse(content={
-        "type": doc["type"],
-        "language": doc["language"],
-        "content": doc["content"]
-    })
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
