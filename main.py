@@ -93,7 +93,7 @@ def rate_limit(request: Request):
     }
 
 @app.post("/scrape/async", response_model=TaskResponse)
-@limiter.limit("1/minute")
+@limiter.limit("3/minute")
 def scrape_tiktok_videos_async(
     request: Request,
     body: TikTokScrapeRequest,
