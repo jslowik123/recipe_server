@@ -1,18 +1,26 @@
-from fastapi import HTTPException, Depends, status, WebSocket, WebSocketDisconnect, Query, Request
+from fastapi import Depends, status
+from fastapi.responses import JSONResponse
 from src.config import config
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 
 security = HTTPBearer()
 
-def verify_token_sync(credentials: HTTPAuthorizationCredentials,) -> str:
+class TokenError(Exception):
+    """Custom exception for token errors"""
+    def __init__(self, error_code: str, technical_details: str):
+        self.error_code = error_code
+        self.technical_details = technical_details
+        super().__init__(technical_details)
+
+def verify_token_sync(credentials: HTTPAuthorizationCredentials) -> str:
     """Synchronous JWT token verification"""
     try:
         jwt_secret = config.supabase_jwt_secret
     except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="JWT Secret nicht konfiguriert",
+        raise TokenError(
+            error_code="INTERNAL_SERVER_ERROR",
+            technical_details="JWT Secret not configured"
         )
 
     token = credentials.credentials
@@ -26,20 +34,20 @@ def verify_token_sync(credentials: HTTPAuthorizationCredentials,) -> str:
         )
         user_id = payload.get("sub")  # Enthält die Supabase User-ID
         if user_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Ungültiger Token",
+            raise TokenError(
+                error_code="INVALID_TOKEN",
+                technical_details="Token does not contain user ID"
             )
         return user_id
     except jwt.ExpiredSignatureError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token ist abgelaufen",
+        raise TokenError(
+            error_code="EXPIRED_TOKEN",
+            technical_details="Token has expired"
         )
     except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Ungültiger Token",
+        raise TokenError(
+            error_code="INVALID_TOKEN",
+            technical_details="Invalid token signature"
         )
 
 async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):

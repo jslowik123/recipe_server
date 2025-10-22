@@ -11,8 +11,10 @@ def rate_limit_handler(request: Request, exc: Union[RateLimitExceeded, Exception
     return JSONResponse(
         status_code=429,
         content={
-            "error": "Rate limit exceeded",
-            "detail": "Too many requests. Please try again later."
+            "status": "FAILURE",
+            "error_code": "RATE_LIMIT_EXCEEDED",
+            "should_refund": False,
+            "technical_details": "Too many requests. Please try again later."
         }
     )
 

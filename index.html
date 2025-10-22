@@ -66,6 +66,28 @@
         .support a:hover {
             text-decoration: underline;
         }
+        .footer {
+            margin-top: 40px;
+            padding-top: 25px;
+            border-top: 2px solid #f0f0f0;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+            font-size: 0.9em;
+            transition: color 0.3s;
+        }
+        .footer a:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+        .footer-separator {
+            color: #ccc;
+        }
     </style>
 </head>
 <body>
@@ -78,6 +100,14 @@
         <div class="support">
             <h3>Need Help?</h3>
             <p>Contact us at <a href="mailto:contact@resimply.app">contact@resimply.app</a></p>
+        </div>
+
+        <div class="footer">
+            <a href="/legal/imprint?lang=de&format=html">Impressum</a>
+            <span class="footer-separator">|</span>
+            <a href="/legal/privacy?lang=de&format=html">Datenschutzerklärung</a>
+            <span class="footer-separator">|</span>
+            <a href="/legal/terms?lang=de&format=html">Nutzungsbedingungen</a>
         </div>
     </div>
 </body>

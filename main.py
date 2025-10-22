@@ -4,7 +4,7 @@ import logging
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import HTTPException, Depends, status, WebSocket, WebSocketDisconnect, Query, Request
+from fastapi import Depends, status, WebSocket, WebSocketDisconnect, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
@@ -15,8 +15,8 @@ from src.websocket_manager import initialize_websocket_manager, get_websocket_ma
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from src.helper.rate_limit import rate_limit_handler, get_user_identifier
-from src.helper.verify_token import verify_token, verify_token_sync, security
-import markdown
+from src.helper.verify_token import verify_token, verify_token_sync, security, TokenError
+from src.routes.legal import router as legal_router
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,9 @@ app.state.limiter = limiter  # type: ignore[attr-defined]
 
 app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 
+# Include legal routes
+app.include_router(legal_router)
+
 
 # Pydantic Models
 class TikTokScrapeRequest(BaseModel):
@@ -75,6 +78,106 @@ class TaskResponse(BaseModel):
 @app.get("/")
 def read_root():
     return FileResponse("index.html")
+
+@app.get("/support")
+def get_support(lang: str = Query("en", regex="^(de|en)$")):
+    """
+    Support contact information for App Store
+
+    Query params:
+    - lang: de or en (default: de)
+
+    Examples:
+    - /support?lang=de
+    - /support?lang=en
+    """
+    title = "Support" if lang == "en" else "Support"
+    heading = "Support" if lang == "en" else "Support"
+    text = "If you need assistance or have any questions, please contact us:" if lang == "en" else "Wenn Sie Unterstützung benötigen oder Fragen haben, kontaktieren Sie uns bitte:"
+    email_label = "Email" if lang == "en" else "E-Mail"
+
+    html_content = f"""<!DOCTYPE html>
+<html lang="{lang}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title}</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            color: #333;
+        }}
+        .language-switcher {{
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+        }}
+        .language-switcher a {{
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 0.9em;
+            transition: all 0.3s;
+        }}
+        .language-switcher a.active {{
+            background: #007AFF;
+            color: white;
+            font-weight: 600;
+        }}
+        .language-switcher a:not(.active) {{
+            background: #f0f0f0;
+            color: #666;
+        }}
+        .language-switcher a:not(.active):hover {{
+            background: #e0e0e0;
+            color: #333;
+        }}
+        h1 {{
+            border-bottom: 2px solid #007AFF;
+            padding-bottom: 10px;
+            margin-top: 40px;
+        }}
+        .contact {{
+            margin-top: 30px;
+            font-size: 1.1em;
+        }}
+        a {{
+            color: #007AFF;
+        }}
+        @media (max-width: 600px) {{
+            body {{
+                padding: 10px;
+                padding-top: 60px;
+            }}
+            .language-switcher {{
+                top: 10px;
+                right: 10px;
+            }}
+            h1 {{
+                margin-top: 20px;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="language-switcher">
+        <a href="/support?lang=de" class="{'active' if lang == 'de' else ''}">Deutsch</a>
+        <a href="/support?lang=en" class="{'active' if lang == 'en' else ''}">English</a>
+    </div>
+    <h1>{heading}</h1>
+    <div class="contact">
+        <p>{text}</p>
+        <p><strong>{email_label}:</strong> <a href="mailto:contact@resimply.app">contact@resimply.app</a></p>
+    </div>
+</body>
+</html>"""
+    return HTMLResponse(content=html_content)
 
 @app.get("/health")
 @app.head("/health")
@@ -109,20 +212,44 @@ def scrape_tiktok_videos_async(
 
         # Validate URL
         if not body.url or not body.url.strip():
-            raise HTTPException(status_code=422, detail="URL is required and cannot be empty")
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "status": "FAILURE",
+                    "error_code": "INVALID_URL",
+                    "should_refund": True,
+                    "technical_details": "URL is required and cannot be empty"
+                }
+            )
 
         # Start the async task with JWT token
         task = scrape_tiktok_async.delay(body.url.strip(), body.language, user_id, jwt_token)
-        
+
         return TaskResponse(
             task_id=task.id,
             status="PENDING",
             message=f"Started scraping TikTok video: {body.url}. Use /task/{task.id} to check progress."
         )
-    except HTTPException:
-        raise
+    except TokenError as e:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "status": "FAILURE",
+                "error_code": e.error_code,
+                "should_refund": True,
+                "technical_details": e.technical_details
+            }
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to start task: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "FAILURE",
+                "error_code": "TASK_START_FAILED",
+                "should_refund": True,
+                "technical_details": str(e)
+            }
+        )
 
 
 @app.get("/task/{task_id}")
@@ -132,7 +259,7 @@ def get_task_status(task_id: str, user_id: str = Depends(verify_token)):
     """
     try:
         task_result = celery_app.AsyncResult(task_id)
-        
+
         if task_result.state == 'PENDING':
             return {
                 "task_id": task_id,
@@ -154,15 +281,23 @@ def get_task_status(task_id: str, user_id: str = Depends(verify_token)):
         elif task_result.state == 'SUCCESS':
             result = task_result.result
 
-            # New response format: recipe is already uploaded to Supabase
+            # Check if upload failed
+            if result and isinstance(result, dict) and result.get('upload_error'):
+                return {
+                    "status": "FAILURE",
+                    "error_code": "UPLOAD_FAILED",
+                    "should_refund": True,
+                    "technical_details": result.get('upload_error')
+                }
+
+            # Success response
             if result and isinstance(result, dict):
                 return {
                     "task_id": task_id,
                     "status": "SUCCESS",
                     "message": result.get('message', 'Recipe successfully processed'),
                     "recipe_id": result.get('recipe_id'),
-                    "recipe_name": result.get('recipe_name', 'Recipe'),
-                    "upload_error": result.get('upload_error')  # Only present if upload failed
+                    "recipe_name": result.get('recipe_name', 'Recipe')
                 }
 
             return {
@@ -174,12 +309,21 @@ def get_task_status(task_id: str, user_id: str = Depends(verify_token)):
             }
         else:  # FAILURE
             return {
-                "task_id": task_id,
                 "status": "FAILURE",
-                "error": str(task_result.info)
+                "error_code": "PROCESSING_ERROR",
+                "should_refund": True,
+                "technical_details": str(task_result.info)
             }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get task status: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "FAILURE",
+                "error_code": "TASK_STATUS_ERROR",
+                "should_refund": True,
+                "technical_details": str(e)
+            }
+        )
 
 @app.websocket("/wss/{task_id}")
 async def websocket_task_updates(
@@ -262,186 +406,6 @@ def check_redis_connection():
     except Exception as e:
         return False
 
-
-# Legal document helpers
-def get_legal_document(doc_type: str, lang: str = "de") -> dict:
-    """
-    Load legal document from legal/{lang}/{doc_type}_content_{lang}.md
-
-    Args:
-        doc_type: Type of document (privacy_policy, terms_of_service, imprint)
-        lang: Language code (de, en)
-
-    Returns:
-        dict with content and metadata
-    """
-    # Validate inputs
-    valid_types = ["privacy_policy", "terms_of_service", "imprint"]
-    valid_langs = ["de", "en"]
-
-    if doc_type not in valid_types:
-        raise HTTPException(status_code=404, detail=f"Invalid document type. Must be one of: {', '.join(valid_types)}")
-
-    if lang not in valid_langs:
-        raise HTTPException(status_code=400, detail=f"Invalid language. Supported: {', '.join(valid_langs)}")
-
-    # Build file path using your naming convention
-    file_path = Path("legal") / lang / f"{doc_type}_content_{lang}.md"
-
-    if not file_path.exists():
-        raise HTTPException(
-            status_code=404,
-            detail=f"Document not found: {doc_type} ({lang}). Please create {file_path}"
-        )
-
-    try:
-        content = file_path.read_text(encoding="utf-8")
-        return {
-            "type": doc_type,
-            "language": lang,
-            "content": content,
-            "path": str(file_path)
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read document: {str(e)}")
-
-
-def render_legal_html(doc: dict) -> str:
-    """
-    Render legal document as HTML page
-
-    Args:
-        doc: Document dict from get_legal_document()
-
-    Returns:
-        HTML string
-    """
-    html_content = markdown.markdown(doc["content"])
-
-    # Map document types to titles
-    titles = {
-        "privacy_policy": {"de": "Datenschutzerklärung", "en": "Privacy Policy"},
-        "terms_of_service": {"de": "Nutzungsbedingungen", "en": "Terms of Service"},
-        "imprint": {"de": "Impressum", "en": "Imprint"}
-    }
-
-    title = titles.get(doc["type"], {}).get(doc["language"], "Legal Document")
-
-    return f"""<!DOCTYPE html>
-<html lang="{doc['language']}">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title}</title>
-    <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            line-height: 1.6;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            color: #333;
-        }}
-        h1 {{
-            border-bottom: 2px solid #007AFF;
-            padding-bottom: 10px;
-        }}
-        h2 {{
-            margin-top: 30px;
-            color: #007AFF;
-        }}
-        h3 {{
-            margin-top: 20px;
-        }}
-        a {{
-            color: #007AFF;
-        }}
-        @media (max-width: 600px) {{
-            body {{
-                padding: 10px;
-            }}
-        }}
-    </style>
-</head>
-<body>
-    {html_content}
-</body>
-</html>"""
-
-
-@app.get("/legal/privacy")
-def get_privacy_policy(lang: str = Query("de", regex="^(de|en)$"), format: str = Query("json", regex="^(json|html)$")):
-    """
-    Get privacy policy / Datenschutzerklärung
-
-    Query params:
-    - lang: de or en (default: de)
-    - format: json or html (default: json)
-
-    Examples:
-    - /legal/privacy?lang=de&format=html
-    - /legal/privacy?lang=en&format=json
-    """
-    doc = get_legal_document("privacy_policy", lang)
-
-    if format == "html":
-        return HTMLResponse(content=render_legal_html(doc))
-
-    return JSONResponse(content={
-        "type": doc["type"],
-        "language": doc["language"],
-        "content": doc["content"]
-    })
-
-
-@app.get("/legal/terms")
-def get_terms_of_service(lang: str = Query("de", regex="^(de|en)$"), format: str = Query("json", regex="^(json|html)$")):
-    """
-    Get terms of service / Nutzungsbedingungen
-
-    Query params:
-    - lang: de or en (default: de)
-    - format: json or html (default: json)
-
-    Examples:
-    - /legal/terms?lang=de&format=html
-    - /legal/terms?lang=en&format=json
-    """
-    doc = get_legal_document("terms_of_service", lang)
-
-    if format == "html":
-        return HTMLResponse(content=render_legal_html(doc))
-
-    return JSONResponse(content={
-        "type": doc["type"],
-        "language": doc["language"],
-        "content": doc["content"]
-    })
-
-
-@app.get("/legal/imprint")
-def get_imprint(lang: str = Query("de", regex="^(de|en)$"), format: str = Query("json", regex="^(json|html)$")):
-    """
-    Get imprint / Impressum
-
-    Query params:
-    - lang: de or en (default: de)
-    - format: json or html (default: json)
-
-    Examples:
-    - /legal/imprint?lang=de&format=html
-    - /legal/imprint?lang=en&format=json
-    """
-    doc = get_legal_document("imprint", lang)
-
-    if format == "html":
-        return HTMLResponse(content=render_legal_html(doc))
-
-    return JSONResponse(content={
-        "type": doc["type"],
-        "language": doc["language"],
-        "content": doc["content"]
-    })
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
