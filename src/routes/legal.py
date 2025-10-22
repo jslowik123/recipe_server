@@ -163,7 +163,7 @@ def render_legal_html(doc: dict) -> str:
 
 
 @router.get("/privacy")
-def get_privacy_policy(lang: str = Query("de", regex="^(de|en)$"), format: str = Query("json", regex="^(json|html)$")):
+def get_privacy_policy(lang: str = Query("en", regex="^(de|en)$"), format: str = Query("json", regex="^(json|html)$")):
     """
     Get privacy policy / Datenschutzerklärung
 
@@ -188,7 +188,7 @@ def get_privacy_policy(lang: str = Query("de", regex="^(de|en)$"), format: str =
 
 
 @router.get("/terms")
-def get_terms_of_service(lang: str = Query("de", regex="^(de|en)$"), format: str = Query("json", regex="^(json|html)$")):
+def get_terms_of_service(lang: str = Query("en", regex="^(de|en)$"), format: str = Query("json", regex="^(json|html)$")):
     """
     Get terms of service / Nutzungsbedingungen
 
@@ -213,7 +213,7 @@ def get_terms_of_service(lang: str = Query("de", regex="^(de|en)$"), format: str
 
 
 @router.get("/imprint")
-def get_imprint(lang: str = Query("de", regex="^(de|en)$"), format: str = Query("json", regex="^(json|html)$")):
+def get_imprint(lang: str = Query("en", regex="^(de|en)$"), format: str = Query("json", regex="^(json|html)$")):
     """
     Get imprint / Impressum
 

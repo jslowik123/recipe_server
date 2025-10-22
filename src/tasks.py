@@ -225,14 +225,21 @@ def scrape_tiktok_async(self, post_url: str, language: str, user_id: str, jwt_to
 
             logger.error(f"❌ Failed to upload recipe to Supabase: {upload_error}")
 
-            # Return the original result if upload fails
-            result['upload_error'] = str(upload_error)
+            # Return error for upload failure
+            result = {
+                "status": "FAILURE",
+                "error_code": "UPLOAD_FAILED",
+                "should_refund": True,
+                "technical_details": str(upload_error),
+                "upload_error": str(upload_error)
+            }
 
             # Publish completion with upload error to WebSocket
-            publish_websocket_update(task_id, "completion", {
-                "status": "SUCCESS",
-                "message": "Recipe processed but upload failed",
-                "upload_error": str(upload_error)
+            publish_websocket_update(task_id, "error", {
+                "status": "FAILURE",
+                "error_code": "UPLOAD_FAILED",
+                "should_refund": True,
+                "technical_details": str(upload_error)
             })
 
         # Log final success
@@ -270,20 +277,19 @@ def scrape_tiktok_async(self, post_url: str, language: str, user_id: str, jwt_to
         logger.error(f"📋 Full traceback: {traceback.format_exc()}")
 
         error_data = {
-            'url': post_url,
-            'error': str(scraping_exc),
-            'status': 'TikTok scraping failed',
-            'details': f'Scraping error: {str(scraping_exc)}',
-            'exc_type': type(scraping_exc).__name__,
-            'exc_message': str(scraping_exc)
+            "status": "FAILURE",
+            "error_code": "SCRAPING_ERROR",
+            "should_refund": True,
+            "technical_details": str(scraping_exc)
         }
         self.update_state(state=states.FAILURE, meta=error_data)
 
         # Publish error to WebSocket
         publish_websocket_update(task_id, "error", {
             "status": "FAILURE",
-            "error": str(scraping_exc),
-            "message": "TikTok scraping failed"
+            "error_code": "SCRAPING_ERROR",
+            "should_refund": True,
+            "technical_details": str(scraping_exc)
         })
 
         # Finalize log with failure
@@ -309,20 +315,19 @@ def scrape_tiktok_async(self, post_url: str, language: str, user_id: str, jwt_to
         logger.error(f"📋 Full traceback: {traceback.format_exc()}")
 
         error_data = {
-            'url': post_url,
-            'error': str(exc),
-            'status': 'Unexpected error occurred',
-            'details': f'Unexpected error during processing: {str(exc)}',
-            'exc_type': type(exc).__name__,
-            'exc_message': traceback.format_exc().split('\n')
+            "status": "FAILURE",
+            "error_code": "PROCESSING_ERROR",
+            "should_refund": True,
+            "technical_details": str(exc)
         }
         self.update_state(state=states.FAILURE, meta=error_data)
 
         # Publish error to WebSocket
         publish_websocket_update(task_id, "error", {
             "status": "FAILURE",
-            "error": str(exc),
-            "message": "Unexpected error occurred"
+            "error_code": "PROCESSING_ERROR",
+            "should_refund": True,
+            "technical_details": str(exc)
         })
 
         # Finalize log with failure

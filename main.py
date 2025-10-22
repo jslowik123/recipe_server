@@ -4,7 +4,7 @@ import logging
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import HTTPException, Depends, status, WebSocket, WebSocketDisconnect, Query, Request
+from fastapi import Depends, status, WebSocket, WebSocketDisconnect, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
@@ -15,7 +15,7 @@ from src.websocket_manager import initialize_websocket_manager, get_websocket_ma
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from src.helper.rate_limit import rate_limit_handler, get_user_identifier
-from src.helper.verify_token import verify_token, verify_token_sync, security
+from src.helper.verify_token import verify_token, verify_token_sync, security, TokenError
 from src.routes.legal import router as legal_router
 
 logger = logging.getLogger(__name__)
@@ -80,7 +80,7 @@ def read_root():
     return FileResponse("index.html")
 
 @app.get("/support")
-def get_support(lang: str = Query("de", regex="^(de|en)$")):
+def get_support(lang: str = Query("en", regex="^(de|en)$")):
     """
     Support contact information for App Store
 
@@ -212,20 +212,44 @@ def scrape_tiktok_videos_async(
 
         # Validate URL
         if not body.url or not body.url.strip():
-            raise HTTPException(status_code=422, detail="URL is required and cannot be empty")
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "status": "FAILURE",
+                    "error_code": "INVALID_URL",
+                    "should_refund": True,
+                    "technical_details": "URL is required and cannot be empty"
+                }
+            )
 
         # Start the async task with JWT token
         task = scrape_tiktok_async.delay(body.url.strip(), body.language, user_id, jwt_token)
-        
+
         return TaskResponse(
             task_id=task.id,
             status="PENDING",
             message=f"Started scraping TikTok video: {body.url}. Use /task/{task.id} to check progress."
         )
-    except HTTPException:
-        raise
+    except TokenError as e:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "status": "FAILURE",
+                "error_code": e.error_code,
+                "should_refund": True,
+                "technical_details": e.technical_details
+            }
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to start task: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "FAILURE",
+                "error_code": "TASK_START_FAILED",
+                "should_refund": True,
+                "technical_details": str(e)
+            }
+        )
 
 
 @app.get("/task/{task_id}")
@@ -235,7 +259,7 @@ def get_task_status(task_id: str, user_id: str = Depends(verify_token)):
     """
     try:
         task_result = celery_app.AsyncResult(task_id)
-        
+
         if task_result.state == 'PENDING':
             return {
                 "task_id": task_id,
@@ -257,15 +281,23 @@ def get_task_status(task_id: str, user_id: str = Depends(verify_token)):
         elif task_result.state == 'SUCCESS':
             result = task_result.result
 
-            # New response format: recipe is already uploaded to Supabase
+            # Check if upload failed
+            if result and isinstance(result, dict) and result.get('upload_error'):
+                return {
+                    "status": "FAILURE",
+                    "error_code": "UPLOAD_FAILED",
+                    "should_refund": True,
+                    "technical_details": result.get('upload_error')
+                }
+
+            # Success response
             if result and isinstance(result, dict):
                 return {
                     "task_id": task_id,
                     "status": "SUCCESS",
                     "message": result.get('message', 'Recipe successfully processed'),
                     "recipe_id": result.get('recipe_id'),
-                    "recipe_name": result.get('recipe_name', 'Recipe'),
-                    "upload_error": result.get('upload_error')  # Only present if upload failed
+                    "recipe_name": result.get('recipe_name', 'Recipe')
                 }
 
             return {
@@ -277,12 +309,21 @@ def get_task_status(task_id: str, user_id: str = Depends(verify_token)):
             }
         else:  # FAILURE
             return {
-                "task_id": task_id,
                 "status": "FAILURE",
-                "error": str(task_result.info)
+                "error_code": "PROCESSING_ERROR",
+                "should_refund": True,
+                "technical_details": str(task_result.info)
             }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get task status: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "FAILURE",
+                "error_code": "TASK_STATUS_ERROR",
+                "should_refund": True,
+                "technical_details": str(e)
+            }
+        )
 
 @app.websocket("/wss/{task_id}")
 async def websocket_task_updates(
