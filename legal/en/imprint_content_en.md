@@ -22,7 +22,9 @@ Insofar as the content on this app was not created by me, the copyrights of thir
 ## Special Notes Regarding the App
 
 ### TikTok Integration
-Resimply uses publicly available TikTok APIs to process TikTok video URLs. This app has no official connection to TikTok Ltd. or ByteDance Ltd. TikTok is a trademark of TikTok Ltd.
+Resimply extracts information from publicly accessible TikTok videos. This app has no official connection to TikTok Ltd. or ByteDance Ltd. and does not use officially certified APIs. TikTok is a trademark of TikTok Ltd.
+
+**Important Notice:** The app's functionality depends on the public availability of TikTok content. Changes to the TikTok platform may affect the app's functionality.
 
 ### AI-Generated Content
 The app uses artificial intelligence to extract recipe information from TikTok videos. Despite careful programming, I cannot guarantee the completeness and accuracy of the extracted recipe data. Users are themselves responsible for verifying the safety and accuracy of the recipes.

@@ -22,7 +22,9 @@ Soweit die Inhalte auf dieser App nicht von mir erstellt wurden, werden die Urhe
 ## Besondere Hinweise zur App
 
 ### TikTok-Integration
-Resimply nutzt öffentlich verfügbare TikTok-APIs zur Verarbeitung von TikTok-Video-URLs. Diese App steht in keiner offiziellen Verbindung zu TikTok Ltd. oder ByteDance Ltd. TikTok ist eine Marke von TikTok Ltd.
+Resimply extrahiert Informationen aus öffentlich zugänglichen TikTok-Videos. Diese App steht in keiner offiziellen Verbindung zu TikTok Ltd. oder ByteDance Ltd. und nutzt keine offiziell zertifizierten APIs. TikTok ist eine Marke von TikTok Ltd.
+
+**Wichtiger Hinweis:** Die Funktionalität der App hängt von der öffentlichen Verfügbarkeit von TikTok-Inhalten ab. Änderungen an der TikTok-Plattform können die Funktionalität der App beeinträchtigen.
 
 ### KI-generierte Inhalte
 Die App verwendet künstliche Intelligenz zur Extraktion von Rezeptinformationen aus TikTok-Videos. Trotz sorgfältiger Programmierung kann ich keine Gewähr für die Vollständigkeit und Richtigkeit der extrahierten Rezeptdaten übernehmen. Nutzer sind selbst dafür verantwortlich, die Sicherheit und Genauigkeit der Rezepte zu überprüfen.

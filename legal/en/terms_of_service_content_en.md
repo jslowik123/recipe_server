@@ -210,7 +210,8 @@ Our recipe extraction process uses **OpenAI's GPT-4o-mini** language model to an
 
 **AI Technology Disclaimer:**
 - We use OpenAI GPT-4o-mini API for recipe extraction
-- The AI processes video transcripts and metadata (not video files)
+- The AI processes video frames (still images), transcripts, and metadata
+- Complete video files are not sent, only extracted frames
 - OpenAI may temporarily store data for 30 days for abuse monitoring
 - API data is not used to train OpenAI models (per OpenAI's API policy)
 - By using our service, you consent to this AI processing
@@ -218,16 +219,42 @@ Our recipe extraction process uses **OpenAI's GPT-4o-mini** language model to an
 
 ### 8.3 Third-Party Dependencies
 Our Service relies on third-party systems including:
-- TikTok's public APIs and content availability
-- Cloud infrastructure providers
-- Mobile app store distribution platforms
-  We are not responsible for third-party service disruptions or changes.
+- **TikTok Platform**: Public availability of video content (no official API partnership)
+- **Cloud Infrastructure Providers**: Supabase, OpenAI
+- **Distribution Platforms**: Apple App Store
+
+**Important Notice:** Since we do not use an official TikTok API, functionality may be affected at any time by changes to the TikTok platform. We are not responsible for third-party service disruptions or changes.
 
 ### 8.4 Content Availability
 We do not guarantee:
 - Continued availability of processed recipes
 - Preservation of TikTok source videos
 - Compatibility with future TikTok platform changes
+
+### 8.5 Token Refund Policy for Service Outages
+
+**In Case of Permanent TikTok Platform Blocking:**
+Should the TikTok platform permanently block or make scraping impossible:
+- Unused tokens will be refunded proportionally
+- Refund will be processed within 30 days of official announcement
+- Refund will be issued through the original payment method (Apple App Store)
+- Definition of "permanent": Disruption lasting longer than 30 consecutive days
+
+**In Case of Temporary Disruptions (< 7 days):**
+For short-term technical disruptions or TikTok platform changes:
+- No automatic refund
+- Information about estimated recovery time via in-app notification
+- Token expiration deadlines will be automatically extended by the outage duration
+- Affected processing attempts will be automatically refunded
+
+**In Case of Frequent Disruptions (> 10 outages per month):**
+Should the service experience more than 10 outages per calendar month:
+- Users can request refund of unused tokens (contact@resimply.app)
+- OR: Compensation through additional free tokens (50% of unused balance)
+- Choice is at the user's discretion
+
+**Important Notice:**
+This refund policy applies in addition to the automatic token refunds for technical errors mentioned in § 7.2. By using the token-based system, you acknowledge that functionality depends on third-party platforms (TikTok) and that disruptions may occur despite all due diligence.
 
 ## 9. Limitation of Liability
 
@@ -306,23 +333,28 @@ I will inform you with reasonable notice before termination, unless a serious br
 
 ### 10.3 Data Deletion After Termination (GDPR Art. 17)
 After account deletion:
-- Your personal data will be completely deleted within 30 days
+- Your personal data will be immediately and irreversibly deleted
 - Your saved recipes will be irrevocably removed
-- Anonymized usage statistics may be retained for analytical purposes
+- There is no recovery option - deletion is final
 - Legally required retention periods will be observed (e.g., tax law)
 
-You may request a copy of your data pursuant to Art. 15 GDPR before deleting your account.
+**Important:** You may request a copy of your data pursuant to Art. 15 GDPR before deleting your account. After deletion, no data recovery is possible.
 
-### 10.4 Demo Mode Data Deletion
+### 10.4 Demo Mode Data Storage and Deletion
 If you use Resimply in Demo Mode without creating an account:
-- Demo recipes are stored locally on your device only
-- No personal data is collected or stored on our servers
-- Demo data is automatically cleared when you:
-  - Create a full account (data is not migrated)
-  - Uninstall the app
-  - Clear app data via device settings
+- **Demo recipes are stored in the cloud** (not locally on your device)
+- Demo data is linked to a temporary anonymous ID
+- No personal data (email, name) is collected
 - Demo tokens expire after 7 days of inactivity
-- We do not retain any Demo Mode data on our servers
+
+**Important Notes on Demo Data Storage:**
+- ⚠️ There is currently **no automatic deletion mechanism** for demo data after inactivity
+- Demo data remains on our servers until manually deleted
+- When you create a full account, demo data is not migrated
+- To fully delete demo data, contact contact@resimply.app
+
+**Future Improvements:**
+We plan to implement automatic deletion of demo data after 30 days of inactivity. Until then, you can request manual deletion via email.
 
 ### 10.5 Consequences of Termination
 After termination:
@@ -487,11 +519,25 @@ Both Apple and Google may have additional terms that apply to your use of Resimp
 - In case of conflict between these Terms and platform terms, platform terms prevail
 - Platform providers may enforce these Terms directly against you
 
-### 16.4 Cross-Platform Account Access
-Your Resimply account works across iOS and Android:
-- Sign in with the same Apple ID or Google account on any device
-- Recipe data syncs automatically across platforms
-- Token balances are shared across all your devices
+### 16.4 Platform Availability and Account Access
+**Current Availability:**
+- Resimply is currently **exclusively available for iOS** (iPhone, iPad) via the Apple App Store
+- An Android version is planned for the future but not yet available
+
+**Account Authentication:**
+- **Apple Sign-In**: Works only on iOS devices
+- **Google Sign-In**: Works on iOS devices
+
+**Important Limitations:**
+- Apple Sign-In will **not work on Android** (even in the future version)
+- It is **not possible** to link two different accounts (e.g., Apple + Google) with different email addresses
+- If you plan to switch from iOS to Android in the future, you must use a Google account
+
+**Future Android Version:**
+Once an Android version becomes available:
+- You can access with the same Google account on both platforms
+- Recipe data syncs automatically
+- Token balances are shared
 - Account deletion removes access on all platforms
 
 ## 17. Miscellaneous Provisions

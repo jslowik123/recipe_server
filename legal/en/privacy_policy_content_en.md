@@ -25,15 +25,15 @@ We automatically collect information about your app usage:
 - TikTok URLs you submit for processing
 - Recipe data extracted from videos
 - App interaction patterns and preferences
-- Device information (model, operating system, app version)
 - Log data (access times, feature usage, error reports)
 
 ### 2.3 Technical Information
-We collect technical data to provide and improve our service:
-- Device identifiers and hardware information
-- Network connection information
-- App crash reports and diagnostic data
-- Performance metrics and analytics
+The following technical data may be passively collected by authentication services (Apple Sign-In, Google Sign-In):
+- Device information (model, operating system, app version)
+- Device IDs for authentication purposes
+- App crash reports and diagnostic data (only if you actively share them)
+
+**Important:** We do not actively collect this data ourselves. It is processed by Apple and Google as part of their authentication services. For more details, please refer to Apple's and Google's privacy policies.
 
 ### 2.4 Communications
 When you contact us, we may retain:
@@ -77,8 +77,7 @@ We may process data to:
 ### 4.1 Third-Party Services
 We share limited data with trusted third-party providers:
 - **Cloud Infrastructure**: Secure hosting and data storage
-- **Analytics Services**: Anonymized usage statistics (no personal identifiers)
-- **TikTok API**: Video URLs only (no personal account data)
+- **TikTok Platform**: Video URLs only for extracting publicly available content (no personal account data, no official API)
 - **Email Services**: Account verification and essential communications
 - **hCaptcha**: Bot prevention (IP address, browser data, interaction patterns)
 - **OpenAI GPT-4o-mini**: AI-powered recipe extraction (see details below)
@@ -95,14 +94,17 @@ OpenAI, L.L.C.
 San Francisco, CA 94110, USA
 
 **Data Processed by OpenAI:**
-- TikTok video transcripts and captions (text only, no video files)
+- TikTok video frames (extracted still images from videos)
+- Video transcripts and captions
 - Video metadata (title, description, creator information)
 - Extracted recipe text for structuring
+
+**Important:** Video frames (still images) are extracted and sent to OpenAI, but not complete video files.
 
 **What We Do NOT Send to OpenAI:**
 - ❌ Your personal account information
 - ❌ Your email address or authentication data
-- ❌ Video files or image data
+- ❌ Complete video files (only individual frames)
 - ❌ Your browsing history or app usage patterns
 - ❌ Other recipes in your collection
 
@@ -233,11 +235,7 @@ In case of merger, acquisition, or sale:
 - The same privacy protections will continue to apply
 
 ### 4.4 Anonymized Data
-We may share aggregated, anonymized statistics:
-- General usage patterns and trends
-- Feature adoption metrics
-- Performance and reliability statistics
-- Research and industry insights
+We currently do not collect anonymized statistics or analytics data. Should this change in the future, you will be notified at least 30 days in advance and can object to the data processing.
 
 ## 5. Data Security
 
@@ -295,8 +293,10 @@ We will respond to your requests:
 We retain your information:
 - **Active Accounts**: Throughout your account lifetime
 - **Inactive Accounts**: Up to 2 years of inactivity
-- **Deleted Accounts**: 30 days for recovery, then permanently deleted
+- **Deleted Accounts**: Immediate irreversible deletion with no recovery option
 - **Legal Hold**: Longer if required by law
+
+**Important Notice:** Account deletion is final and cannot be undone. All recipes and data are irrevocably deleted.
 
 **Session Management:**
 - Active sessions remain valid for 30 days (Supabase default)
@@ -308,7 +308,6 @@ We retain your information:
 Different data types have different retention periods:
 - **Recipe Data**: Until account deletion or user removal
 - **Log Data**: 90 days for troubleshooting and improvement
-- **Analytics**: Anonymized data may be retained indefinitely
 - **Support Communications**: 2 years for reference
 
 ### 7.3 Automatic Deletion
@@ -352,7 +351,6 @@ Third-party services we use are either:
 ### 10.1 Mobile App Data
 Our mobile app uses:
 - **Essential Data**: Required for app functionality
-- **Analytics**: Anonymous usage statistics
 - **Preferences**: Your personalized settings
 - **Security**: Authentication and fraud prevention
 
@@ -360,7 +358,7 @@ Our mobile app uses:
 As a mobile app, we don't use traditional web cookies:
 - Local data storage is used for app functionality
 - No tracking across other websites or services
-- Anonymous analytics for app improvement only
+- No analytics or tracking services in use
 
 ### 10.3 Captcha Protection (Bot Prevention)
 We use the hCaptcha service by Intuition Machines Inc. to prevent automated access and abuse.
@@ -371,10 +369,12 @@ Intuition Machines Inc.
 Middletown, DE 19709, USA
 
 **Data Processed:**
-- IP address (truncated after processing)
+- IP address (truncated after processing, only used by hCaptcha)
 - Browser information (User Agent, screen resolution)
 - Interaction data (mouse movements, click patterns)
 - Captcha timestamp
+
+**Important:** The IP address is exclusively used by hCaptcha for bot prevention and is not stored or processed by us. We have no access to your public IP address.
 
 **Purpose:**
 Protection against automated bots, spam, and abuse. The captcha check is only displayed during security-relevant actions (account creation, demo mode).

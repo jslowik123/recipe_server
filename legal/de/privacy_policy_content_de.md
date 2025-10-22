@@ -25,15 +25,15 @@ Wir sammeln automatisch Informationen über Ihre App-Nutzung:
 - TikTok-URLs, die Sie zur Verarbeitung einreichen
 - Rezeptdaten, die aus Videos extrahiert werden
 - App-Interaktionsmuster und Präferenzen
-- Geräteinformationen (Modell, Betriebssystem, App-Version)
 - Log-Daten (Zugriffszeiten, Feature-Nutzung, Fehlerberichte)
 
 ### 2.3 Technische Informationen
-Wir sammeln technische Daten, um unseren Service bereitzustellen und zu verbessern:
-- Gerätekennungen und Hardware-Informationen
-- Netzwerkverbindungsinformationen
-- App-Absturzberichte und Diagnosedaten
-- Leistungsmetriken und Analysen
+Die folgenden technischen Daten können passiv durch Authentifizierungsdienste (Apple Sign-In, Google Sign-In) erfasst werden:
+- Geräteinformationen (Modell, Betriebssystem, App-Version)
+- Geräte-IDs zur Authentifizierung
+- App-Absturzberichte und Diagnosedaten (nur wenn Sie diese aktiv teilen)
+
+**Wichtig:** Wir sammeln diese Daten nicht aktiv selbst. Sie werden von Apple und Google im Rahmen der Authentifizierung verarbeitet. Weitere Details finden Sie in den Datenschutzerklärungen von Apple und Google.
 
 ### 2.4 Kommunikation
 Wenn Sie uns kontaktieren, können wir speichern:
@@ -77,8 +77,7 @@ Wir können Daten verarbeiten, um:
 ### 4.1 Drittanbieter-Services
 Wir teilen begrenzte Daten mit vertrauenswürdigen Drittanbietern:
 - **Cloud-Infrastruktur**: Sicheres Hosting und Datenspeicherung
-- **Analytics-Services**: Anonymisierte Nutzungsstatistiken (keine persönlichen Kennungen)
-- **TikTok-API**: Nur Video-URLs (keine persönlichen Kontodaten)
+- **TikTok-Plattform**: Nur Video-URLs zur Extraktion öffentlich verfügbarer Inhalte (keine persönlichen Kontodaten, keine offizielle API)
 - **E-Mail-Services**: Kontoverifizierung und wesentliche Kommunikation
 - **hCaptcha**: Bot-Prävention (IP-Adresse, Browser-Daten, Interaktionsmuster)
 - **OpenAI GPT-4o-mini**: KI-gestützte Rezeptextraktion (siehe Details unten)
@@ -95,14 +94,17 @@ OpenAI, L.L.C.
 San Francisco, CA 94110, USA
 
 **Von OpenAI verarbeitete Daten:**
-- TikTok-Video-Transkripte und Untertitel (nur Text, keine Videodateien)
+- TikTok-Video-Frames (extrahierte Einzelbilder aus Videos)
+- Video-Transkripte und Untertitel
 - Video-Metadaten (Titel, Beschreibung, Creator-Informationen)
 - Extrahierter Rezepttext zur Strukturierung
+
+**Wichtig:** Es werden Video-Frames (Einzelbilder) extrahiert und an OpenAI gesendet, jedoch keine vollständigen Videodateien.
 
 **Was wir NICHT an OpenAI senden:**
 - ❌ Ihre persönlichen Kontoinformationen
 - ❌ Ihre E-Mail-Adresse oder Authentifizierungsdaten
-- ❌ Videodateien oder Bilddaten
+- ❌ Vollständige Videodateien (nur einzelne Frames)
 - ❌ Ihren Browserverlauf oder App-Nutzungsmuster
 - ❌ Andere Rezepte in Ihrer Sammlung
 
@@ -233,11 +235,7 @@ Im Falle einer Fusion, Akquisition oder eines Verkaufs:
 - Die gleichen Datenschutzbestimmungen werden weiterhin gelten
 
 ### 4.4 Anonymisierte Daten
-Wir können aggregierte, anonymisierte Statistiken teilen:
-- Allgemeine Nutzungsmuster und Trends
-- Feature-Adoptionsmetriken
-- Leistungs- und Zuverlässigkeitsstatistiken
-- Forschungs- und Branchenerkenntnisse
+Wir sammeln derzeit keine anonymisierten Statistiken oder Analytics-Daten. Sollte sich dies in Zukunft ändern, werden Sie mindestens 30 Tage im Voraus informiert und können der Datenverarbeitung widersprechen.
 
 ## 5. Datensicherheit
 
@@ -295,8 +293,10 @@ Wir werden auf Ihre Anfragen antworten:
 Wir bewahren Ihre Informationen auf:
 - **Aktive Konten**: Während der gesamten Lebensdauer Ihres Kontos
 - **Inaktive Konten**: Bis zu 2 Jahre Inaktivität
-- **Gelöschte Konten**: 30 Tage zur Wiederherstellung, dann dauerhaft gelöscht
+- **Gelöschte Konten**: Sofortige irreversible Löschung ohne Wiederherstellungsmöglichkeit
 - **Rechtliche Aufbewahrung**: Länger, wenn gesetzlich erforderlich
+
+**Wichtiger Hinweis:** Die Kontolöschung ist endgültig und kann nicht rückgängig gemacht werden. Alle Rezepte und Daten werden unwiderruflich gelöscht.
 
 **Session-Verwaltung:**
 - Aktive Sessions bleiben 30 Tage gültig (Supabase-Standard)
@@ -308,7 +308,6 @@ Wir bewahren Ihre Informationen auf:
 Verschiedene Datentypen haben unterschiedliche Aufbewahrungsfristen:
 - **Rezeptdaten**: Bis zur Kontolöschung oder Nutzerentfernung
 - **Log-Daten**: 90 Tage für Fehlerbehebung und Verbesserung
-- **Analytics**: Anonymisierte Daten können unbegrenzt aufbewahrt werden
 - **Support-Kommunikation**: 2 Jahre zur Referenz
 
 ### 7.3 Automatische Löschung
@@ -352,7 +351,6 @@ Drittanbieter-Services, die wir nutzen, sind entweder:
 ### 10.1 Mobile App-Daten
 Unsere mobile App verwendet:
 - **Wesentliche Daten**: Erforderlich für App-Funktionalität
-- **Analytics**: Anonyme Nutzungsstatistiken
 - **Präferenzen**: Ihre personalisierten Einstellungen
 - **Sicherheit**: Authentifizierung und Betrugsprävention
 
@@ -360,7 +358,7 @@ Unsere mobile App verwendet:
 Als mobile App verwenden wir keine traditionellen Web-Cookies:
 - Lokale Datenspeicherung wird für App-Funktionalität verwendet
 - Kein Tracking über andere Websites oder Services
-- Anonyme Analytics nur zur App-Verbesserung
+- Keine Analytics oder Tracking-Dienste im Einsatz
 
 ### 10.3 Captcha-Schutz (Bot-Prävention)
 Wir verwenden den Dienst hCaptcha von Intuition Machines Inc. zur Verhinderung von automatisierten Zugriffen und Missbrauch.
@@ -371,10 +369,12 @@ Intuition Machines Inc.
 Middletown, DE 19709, USA
 
 **Verarbeitete Daten:**
-- IP-Adresse (gekürzt nach Verarbeitung)
+- IP-Adresse (gekürzt nach Verarbeitung, nur von hCaptcha verwendet)
 - Browser-Informationen (User Agent, Bildschirmauflösung)
 - Interaktionsdaten (Mausbewegungen, Klick-Muster)
 - Zeitstempel des Captcha-Vorgangs
+
+**Wichtig:** Die IP-Adresse wird ausschließlich von hCaptcha zur Bot-Prävention verwendet und wird von uns nicht gespeichert oder verarbeitet. Wir haben keinen Zugriff auf Ihre öffentliche IP-Adresse.
 
 **Zweck:**
 Schutz vor automatisierten Bots, Spam und Missbrauch. Der Captcha-Check wird nur bei sicherheitsrelevanten Aktionen (Account-Erstellung, Demo-Mode) angezeigt.

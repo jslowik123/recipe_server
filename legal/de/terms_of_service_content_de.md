@@ -107,7 +107,7 @@ Sie dürfen Resimply verwenden, um:
 - Rezepte innerhalb der vorgesehenen Plattformfunktionalität zu teilen
 
 ### 4.2 Verbotene Aktivitäten
-Sie verpflichten sich, NICHT zu:
+Sie dürfen NICHT:
 - Den Dienst für illegale oder unbefugte Zwecke zu verwenden
 - Nicht-koch-bezogene oder unangemessene TikTok-Inhalte einzureichen
 - Zu versuchen, Reverse Engineering zu betreiben, zu hacken oder die Systeme zu kompromittieren
@@ -216,7 +216,8 @@ Der Rezeptextraktionsprozess verwendet das Sprachmodell **OpenAI GPT-4o-mini**, 
 
 **KI-Technologie-Haftungsausschluss:**
 - Wir nutzen die OpenAI GPT-4o-mini API für Rezeptextraktion
-- Die KI verarbeitet Video-Transkripte und Metadaten (keine Videodateien)
+- Die KI verarbeitet Video-Frames (Einzelbilder), Transkripte und Metadaten
+- Es werden keine vollständigen Videodateien gesendet, nur extrahierte Frames
 - OpenAI kann Daten vorübergehend 30 Tage zur Missbrauchsüberwachung speichern
 - API-Daten werden nicht zum Training von OpenAI-Modellen verwendet (gemäß OpenAI API-Richtlinie)
 - Durch die Nutzung des Dienstes stimmen Sie dieser KI-Verarbeitung zu
@@ -226,17 +227,42 @@ Der Rezeptextraktionsprozess verwendet das Sprachmodell **OpenAI GPT-4o-mini**, 
 
 ### 8.3 Abhängigkeiten von Dritten
 Der Dienst ist abhängig von Drittanbietersystemen, einschließlich:
-- TikToks öffentlichen APIs und Inhaltsverfügbarkeit
-- Cloud-Infrastrukturanbietern
-- Vertriebsplattformen für mobile App-Stores
+- **TikTok-Plattform**: Öffentliche Verfügbarkeit von Videoinhalten (keine offizielle API-Partnerschaft)
+- **Cloud-Infrastrukturanbietern**: Supabase, OpenAI
+- **Vertriebsplattformen**: Apple App Store
 
-Ich bin nicht verantwortlich für Störungen oder Änderungen von Drittanbieterdiensten.
+**Wichtiger Hinweis:** Da wir keine offizielle TikTok-API nutzen, kann die Funktionalität jederzeit durch Änderungen an der TikTok-Plattform beeinträchtigt werden. Ich bin nicht verantwortlich für Störungen oder Änderungen von Drittanbieterdiensten.
 
 ### 8.4 Inhaltsverfügbarkeit
 Ich garantiere nicht:
 - Fortgesetzte Verfügbarkeit verarbeiteter Rezepte
 - Erhaltung von TikTok-Quellvideos
 - Kompatibilität mit zukünftigen TikTok-Plattformänderungen
+
+### 8.5 Token-Rückerstattung bei Service-Ausfall
+
+**Bei dauerhafter TikTok-Plattform-Blockierung:**
+Sollte die TikTok-Plattform das Scraping dauerhaft blockieren oder unmöglich machen:
+- Ungenutzte Tokens werden anteilig rückerstattet
+- Rückerstattung erfolgt innerhalb von 30 Tagen nach offizieller Bekanntgabe
+- Rückerstattung erfolgt über den ursprünglichen Zahlungsweg (Apple App Store)
+- Definition "dauerhaft": Störung länger als 30 aufeinanderfolgende Tage
+
+**Bei vorübergehenden Störungen (< 7 Tage):**
+Bei kurzzeitigen technischen Störungen oder TikTok-Plattformänderungen:
+- Keine automatische Rückerstattung
+- Information über geschätzte Wiederherstellungszeit per In-App-Benachrichtigung
+- Token-Ablauffristen werden automatisch um die Ausfallzeit verlängert
+- Betroffene Verarbeitungsversuche werden automatisch rückerstattet
+
+**Bei häufigen Störungen (> 10 Ausfälle pro Monat):**
+Sollte der Service mehr als 10 Ausfälle pro Kalendermonat erleben:
+- User können Rückerstattung ungenutzter Tokens beantragen (contact@resimply.app)
+- ODER: Kompensation durch zusätzliche Gratis-Tokens (50% des ungenutzten Guthabens)
+- Wahlrecht liegt beim User
+
+**Wichtiger Hinweis:**
+Diese Rückerstattungsregelung gilt zusätzlich zu den in § 7.2 genannten automatischen Token-Rückerstattungen bei technischen Fehlern. Durch die Nutzung des tokenbasierten Systems erkennen Sie an, dass die Funktionalität von Drittanbieterplattformen (TikTok) abhängt und Störungen trotz aller Sorgfalt auftreten können.
 
 ## 9. Haftungsbeschränkung
 
@@ -314,23 +340,28 @@ Ich werde Sie vor einer Kündigung mit angemessener Frist informieren, es sei de
 
 ### 10.3 Datenlöschung nach Kündigung (DSGVO Art. 17)
 Nach der Account-Löschung:
-- Werden Ihre personenbezogenen Daten innerhalb von 30 Tagen vollständig gelöscht
+- Werden Ihre personenbezogenen Daten sofort und irreversibel gelöscht
 - Werden Ihre gespeicherten Rezepte unwiderruflich entfernt
-- Können anonymisierte Nutzungsstatistiken zu Analysezwecken aufbewahrt werden
+- Gibt es keine Wiederherstellungsmöglichkeit - die Löschung ist endgültig
 - Werden gesetzlich vorgeschriebene Aufbewahrungsfristen beachtet (z.B. Steuerrecht)
 
-Sie können jederzeit eine Kopie Ihrer Daten gemäß Art. 15 DSGVO anfordern, bevor Sie Ihr Konto löschen.
+**Wichtig:** Sie können jederzeit eine Kopie Ihrer Daten gemäß Art. 15 DSGVO anfordern, bevor Sie Ihr Konto löschen. Nach der Löschung ist keine Datenwiederherstellung möglich.
 
-### 10.4 Demo-Modus Datenlöschung
+### 10.4 Demo-Modus Datenspeicherung und -löschung
 Wenn Sie Resimply im Demo-Modus ohne Kontoerstellung nutzen:
-- Demo-Rezepte werden nur lokal auf Ihrem Gerät gespeichert
-- Es werden keine personenbezogenen Daten auf unseren Servern erfasst oder gespeichert
-- Demo-Daten werden automatisch gelöscht, wenn Sie:
-  - Ein vollständiges Konto erstellen (Daten werden nicht migriert)
-  - Die App deinstallieren
-  - App-Daten über Geräteeinstellungen löschen
+- **Demo-Rezepte werden in der Cloud gespeichert** (nicht lokal auf Ihrem Gerät)
+- Die Demo-Daten sind mit einer temporären anonymen ID verknüpft
+- Es werden keine personenbezogenen Daten (E-Mail, Name) erfasst
 - Demo-Token verfallen nach 7 Tagen Inaktivität
-- Wir behalten keine Demo-Modus-Daten auf unseren Servern
+
+**Wichtige Hinweise zur Demo-Datenspeicherung:**
+- ⚠️ Es gibt derzeit **keinen automatischen Löschmechanismus** für Demo-Daten nach Inaktivität
+- Demo-Daten verbleiben auf unseren Servern, bis Sie manuell gelöscht werden
+- Wenn Sie ein vollständiges Konto erstellen, werden Demo-Daten nicht migriert
+- Um Demo-Daten vollständig zu löschen, kontaktieren Sie contact@resimply.app
+
+**Zukünftige Verbesserungen:**
+Wir planen die Implementierung einer automatischen Löschung von Demo-Daten nach 30 Tagen Inaktivität. Bis dahin können Sie die manuelle Löschung per E-Mail anfordern.
 
 ### 10.5 Folgen der Kündigung
 Nach Kündigung:
@@ -495,11 +526,25 @@ Sowohl Apple als auch Google können zusätzliche Bedingungen haben, die für Ih
 - Im Konfliktfall zwischen diesen AGB und Plattformbedingungen haben Plattformbedingungen Vorrang
 - Plattformanbieter können diese AGB direkt gegen Sie durchsetzen
 
-### 16.4 Cross-Plattform Account-Zugriff
-Ihr Resimply-Konto funktioniert auf iOS und Android:
-- Melden Sie sich mit derselben Apple ID oder demselben Google-Konto auf jedem Gerät an
-- Rezeptdaten synchronisieren automatisch über Plattformen hinweg
-- Token-Salden werden auf allen Ihren Geräten geteilt
+### 16.4 Plattformverfügbarkeit und Account-Zugriff
+**Aktuelle Verfügbarkeit:**
+- Resimply ist derzeit **ausschließlich für iOS** (iPhone, iPad) über den Apple App Store verfügbar
+- Eine Android-Version ist für die Zukunft geplant, aber noch nicht verfügbar
+
+**Account-Authentifizierung:**
+- **Apple Sign-In**: Funktioniert nur auf iOS-Geräten
+- **Google Sign-In**: Funktioniert auf iOS-Geräten
+
+**Wichtige Einschränkungen:**
+- Apple Sign-In funktioniert **nicht auf Android** (auch nicht in der zukünftigen Version)
+- Es ist **nicht möglich**, zwei verschiedene Accounts (z.B. Apple + Google) mit unterschiedlichen E-Mail-Adressen zu verknüpfen
+- Wenn Sie in Zukunft von iOS auf Android wechseln möchten, müssen Sie ein Google-Konto verwenden
+
+**Zukünftige Android-Version:**
+Sobald eine Android-Version verfügbar ist:
+- Können Sie mit demselben Google-Konto auf beiden Plattformen zugreifen
+- Rezeptdaten synchronisieren automatisch
+- Token-Salden werden geteilt
 - Account-Löschung entfernt den Zugriff auf allen Plattformen
 
 ## 17. Sonstige Bestimmungen
