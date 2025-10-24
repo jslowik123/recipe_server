@@ -5,7 +5,7 @@
 
 ## 1. Introduction
 
-This Privacy Policy describes how Resimply ("we," "us," "our," or "the Service") collects, uses, and protects your personal information when you use our mobile application and related services.
+This Privacy Policy describes how Template ("we," "us," "our," or "the Service") collects, uses, and protects your personal information when you use our mobile application and related services.
 
 We are committed to protecting your privacy and being transparent about our data practices. This policy explains what information we collect, how we use it, and your rights regarding your personal data.
 

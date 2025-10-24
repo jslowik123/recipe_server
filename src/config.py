@@ -1,5 +1,5 @@
 """
-Configuration management for TikTok scraping service
+Configuration management for Wardroberry API
 """
 import os
 from dotenv import load_dotenv
@@ -10,18 +10,11 @@ load_dotenv()
 
 class Config:
     """Centralized configuration management"""
-    
+
     def __init__(self):
-        self._validate_config()
-    
-    @property
-    def apify_token(self) -> str:
-        """Get Apify API token"""
-        token = os.getenv("APIFY_API_TOKEN") or os.getenv("APIFY_API_KEY")
-        if not token:
-            raise ConfigurationError("APIFY_API_TOKEN or APIFY_API_KEY not found in environment variables")
-        return token
-    
+        # Don't validate on init - allow lazy loading
+        pass
+
     @property
     def openai_api_key(self) -> str:
         """Get OpenAI API key"""
@@ -29,12 +22,34 @@ class Config:
         if not key:
             raise ConfigurationError("OPENAI_API_KEY not found in environment variables")
         return key
-    
+
+    @property
+    def redis_host(self) -> str:
+        """Get Redis host"""
+        return os.getenv('REDIS_HOST', 'localhost')
+
+    @property
+    def redis_port(self) -> int:
+        """Get Redis port"""
+        return int(os.getenv('REDIS_PORT', '6379'))
+
+    @property
+    def redis_password(self) -> str:
+        """Get Redis password"""
+        return os.getenv('REDIS_PASSWORD', '')
+
+    @property
+    def redis_db(self) -> int:
+        """Get Redis database number"""
+        return int(os.getenv('REDIS_DB', '0'))
+
     @property
     def redis_url(self) -> str:
-        """Get Redis URL"""
-        return os.getenv('REDIS_URL', 'redis://localhost:6379')
-    
+        """Get Redis URL (for backwards compatibility)"""
+        if self.redis_password:
+            return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/{self.redis_db}"
+        return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
+
     @property
     def supabase_jwt_secret(self) -> str:
         """Get Supabase JWT secret"""
@@ -52,24 +67,12 @@ class Config:
         return url
 
     @property
-    def supabase_key(self) -> str:
-        """Get Supabase service role key"""
-        key = os.getenv("SUPABASE_KEY")
+    def supabase_anon_key(self) -> str:
+        """Get Supabase anon/public key"""
+        key = os.getenv("SUPABASE_ANON_KEY")
         if not key:
-            raise ConfigurationError("SUPABASE_KEY not found in environment variables")
+            raise ConfigurationError("SUPABASE_ANON_KEY not found in environment variables")
         return key
-    
-    def _validate_config(self):
-        """Validate that all required configuration is present"""
-        try:
-            # Test all critical config values
-            _ = self.apify_token
-            _ = self.openai_api_key
-            _ = self.supabase_jwt_secret
-            _ = self.supabase_url
-            _ = self.supabase_key
-        except ConfigurationError as e:
-            raise ConfigurationError(f"Configuration validation failed: {e}")
 
 # Global config instance
 config = Config()

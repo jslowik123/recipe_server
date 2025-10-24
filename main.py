@@ -8,49 +8,33 @@ from fastapi import Depends, status, WebSocket, WebSocketDisconnect, Query, Requ
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from src.tasks import scrape_tiktok_async, celery_app
 from src.config import config
 from jose import jwt, JWTError
-from src.websocket_manager import initialize_websocket_manager, get_websocket_manager
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from src.helper.rate_limit import rate_limit_handler, get_user_identifier
 from src.helper.verify_token import verify_token, verify_token_sync, security, TokenError
 from src.routes.legal import router as legal_router
-
+from src.routes.wardroberry import router as wardroberry_router
+from src.routes.support import router as support_router
 logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: fastapi.FastAPI):
     """Application lifespan manager"""
     # Startup
-    logger.info("🚀 Starting application...")
-
-    # Initialize WebSocket manager
-    ws_manager = initialize_websocket_manager(config.redis_url, celery_app)
-    await ws_manager.initialize()
-
-    # Start background listener for Redis pub/sub
-    listener_task = asyncio.create_task(ws_manager.listen_for_updates())
-
+    logger.info("🚀 Starting Wardroberry API...")
     logger.info("✅ Application startup complete")
 
     yield
 
     # Shutdown
     logger.info("🛑 Shutting down application...")
-    listener_task.cancel()
-    try:
-        await listener_task
-    except asyncio.CancelledError:
-        pass
-
-    await ws_manager.cleanup()
     logger.info("✅ Application shutdown complete")
 
 app = fastapi.FastAPI(
-    title="Apify TikTok Scraper with WebSockets",
-    version="2.0.0",
+    title="Wardroberry API - AI-Powered Wardrobe Management",
+    version="1.0.0",
     lifespan=lifespan
 )
 # Rate limiting configuration
@@ -59,19 +43,13 @@ app.state.limiter = limiter  # type: ignore[attr-defined]
 
 app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 
-# Include legal routes
+# Include routes
 app.include_router(legal_router)
+app.include_router(wardroberry_router, prefix="/api/wardrobe")
+app.include_router(support_router)
 
 
-# Pydantic Models
-class TikTokScrapeRequest(BaseModel):
-    url: str
-    language: str
-
-class TaskResponse(BaseModel):
-    task_id: str
-    status: str
-    message: str
+# Pydantic Models will be added in wardroberry routes
 
 
 @app.head("/")
@@ -79,114 +57,64 @@ class TaskResponse(BaseModel):
 def read_root():
     return FileResponse("index.html")
 
-@app.get("/support")
-def get_support(lang: str = Query("en", regex="^(de|en)$")):
-    """
-    Support contact information for App Store
-
-    Query params:
-    - lang: de or en (default: de)
-
-    Examples:
-    - /support?lang=de
-    - /support?lang=en
-    """
-    title = "Support" if lang == "en" else "Support"
-    heading = "Support" if lang == "en" else "Support"
-    text = "If you need assistance or have any questions, please contact us:" if lang == "en" else "Wenn Sie Unterstützung benötigen oder Fragen haben, kontaktieren Sie uns bitte:"
-    email_label = "Email" if lang == "en" else "E-Mail"
-
-    html_content = f"""<!DOCTYPE html>
-<html lang="{lang}">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title}</title>
-    <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            line-height: 1.6;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            color: #333;
-        }}
-        .language-switcher {{
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            display: flex;
-            gap: 10px;
-        }}
-        .language-switcher a {{
-            text-decoration: none;
-            padding: 8px 16px;
-            border-radius: 6px;
-            font-size: 0.9em;
-            transition: all 0.3s;
-        }}
-        .language-switcher a.active {{
-            background: #007AFF;
-            color: white;
-            font-weight: 600;
-        }}
-        .language-switcher a:not(.active) {{
-            background: #f0f0f0;
-            color: #666;
-        }}
-        .language-switcher a:not(.active):hover {{
-            background: #e0e0e0;
-            color: #333;
-        }}
-        h1 {{
-            border-bottom: 2px solid #007AFF;
-            padding-bottom: 10px;
-            margin-top: 40px;
-        }}
-        .contact {{
-            margin-top: 30px;
-            font-size: 1.1em;
-        }}
-        a {{
-            color: #007AFF;
-        }}
-        @media (max-width: 600px) {{
-            body {{
-                padding: 10px;
-                padding-top: 60px;
-            }}
-            .language-switcher {{
-                top: 10px;
-                right: 10px;
-            }}
-            h1 {{
-                margin-top: 20px;
-            }}
-        }}
-    </style>
-</head>
-<body>
-    <div class="language-switcher">
-        <a href="/support?lang=de" class="{'active' if lang == 'de' else ''}">Deutsch</a>
-        <a href="/support?lang=en" class="{'active' if lang == 'en' else ''}">English</a>
-    </div>
-    <h1>{heading}</h1>
-    <div class="contact">
-        <p>{text}</p>
-        <p><strong>{email_label}:</strong> <a href="mailto:contact@resimply.app">contact@resimply.app</a></p>
-    </div>
-</body>
-</html>"""
-    return HTMLResponse(content=html_content)
 
 @app.get("/health")
 @app.head("/health")
 def health_check():
-    return {
+    """
+    Health check endpoint for Wardroberry API
+    Checks: Redis, Celery, Supabase DB, Supabase Storage, OpenAI
+    """
+    from src.database_manager import DatabaseManager
+    from src.storage_manager import StorageManager
+    from src.queue_manager import QueueManager
+    from src.ai import ClothingAI
+
+    health_status = {
         "status": "healthy",
-        "redis_connected": check_redis_connection(),
-        "services": ["web", "redis", "worker"]
+        "services": {}
     }
+
+    # Check Redis
+    try:
+        health_status["services"]["redis"] = check_redis_connection()
+    except Exception as e:
+        health_status["services"]["redis"] = False
+        health_status["status"] = "degraded"
+
+    # Check Celery/Queue
+    try:
+        queue = QueueManager()
+        health_status["services"]["celery"] = queue.health_check()
+    except Exception as e:
+        health_status["services"]["celery"] = False
+        health_status["status"] = "degraded"
+
+    # Check Supabase Database
+    try:
+        db = DatabaseManager()
+        health_status["services"]["database"] = db.health_check()
+    except Exception as e:
+        health_status["services"]["database"] = False
+        health_status["status"] = "degraded"
+
+    # Check Supabase Storage
+    try:
+        storage = StorageManager()
+        health_status["services"]["storage"] = storage.health_check()
+    except Exception as e:
+        health_status["services"]["storage"] = False
+        health_status["status"] = "degraded"
+
+    # Check OpenAI
+    try:
+        ai = ClothingAI()
+        health_status["services"]["openai"] = ai.health_check()
+    except Exception as e:
+        health_status["services"]["openai"] = False
+        health_status["status"] = "degraded"
+
+    return health_status
 
 @app.get("/rate_limit_test")
 @limiter.limit("1/minute")
@@ -195,204 +123,6 @@ def rate_limit(request: Request):
         "status": "healthy",
     }
 
-@app.post("/scrape/async", response_model=TaskResponse)
-@limiter.limit("3/minute")
-def scrape_tiktok_videos_async(
-    request: Request,
-    body: TikTokScrapeRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-    """
-    Start asynchronous TikTok scraping task for a single URL
-    """
-    try:
-        # Verify JWT token and get user_id
-        user_id = verify_token_sync(credentials)
-        jwt_token = credentials.credentials
-
-        # Validate URL
-        if not body.url or not body.url.strip():
-            return JSONResponse(
-                status_code=422,
-                content={
-                    "status": "FAILURE",
-                    "error_code": "INVALID_URL",
-                    "should_refund": True,
-                    "technical_details": "URL is required and cannot be empty"
-                }
-            )
-
-        # Start the async task with JWT token
-        task = scrape_tiktok_async.delay(body.url.strip(), body.language, user_id, jwt_token)
-
-        return TaskResponse(
-            task_id=task.id,
-            status="PENDING",
-            message=f"Started scraping TikTok video: {body.url}. Use /task/{task.id} to check progress."
-        )
-    except TokenError as e:
-        return JSONResponse(
-            status_code=401,
-            content={
-                "status": "FAILURE",
-                "error_code": e.error_code,
-                "should_refund": True,
-                "technical_details": e.technical_details
-            }
-        )
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={
-                "status": "FAILURE",
-                "error_code": "TASK_START_FAILED",
-                "should_refund": True,
-                "technical_details": str(e)
-            }
-        )
-
-
-@app.get("/task/{task_id}")
-def get_task_status(task_id: str, user_id: str = Depends(verify_token)):
-    """
-    Get the status and result of a task
-    """
-    try:
-        task_result = celery_app.AsyncResult(task_id)
-
-        if task_result.state == 'PENDING':
-            return {
-                "task_id": task_id,
-                "status": "PENDING",
-                "message": "Task is waiting to be processed"
-            }
-        elif task_result.state == 'PROGRESS':
-            progress_info = task_result.info or {}
-            return {
-                "task_id": task_id,
-                "status": "PROGRESS",
-                "step": progress_info.get('step', 0),
-                "total_steps": 5,
-                "current_status": progress_info.get('status', 'Processing...'),
-                "details": progress_info.get('details', ''),
-                "url": progress_info.get('url', ''),
-                "message": progress_info.get('status', 'Processing...')
-            }
-        elif task_result.state == 'SUCCESS':
-            result = task_result.result
-
-            # Check if upload failed
-            if result and isinstance(result, dict) and result.get('upload_error'):
-                return {
-                    "status": "FAILURE",
-                    "error_code": "UPLOAD_FAILED",
-                    "should_refund": True,
-                    "technical_details": result.get('upload_error')
-                }
-
-            # Success response
-            if result and isinstance(result, dict):
-                return {
-                    "task_id": task_id,
-                    "status": "SUCCESS",
-                    "message": result.get('message', 'Recipe successfully processed'),
-                    "recipe_id": result.get('recipe_id'),
-                    "recipe_name": result.get('recipe_name', 'Recipe')
-                }
-
-            return {
-                "task_id": task_id,
-                "status": "SUCCESS",
-                "message": "Recipe processing completed",
-                "recipe_id": None,
-                "recipe_name": "Unknown Recipe"
-            }
-        else:  # FAILURE
-            return {
-                "status": "FAILURE",
-                "error_code": "PROCESSING_ERROR",
-                "should_refund": True,
-                "technical_details": str(task_result.info)
-            }
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={
-                "status": "FAILURE",
-                "error_code": "TASK_STATUS_ERROR",
-                "should_refund": True,
-                "technical_details": str(e)
-            }
-        )
-
-@app.websocket("/wss/{task_id}")
-async def websocket_task_updates(
-    websocket: WebSocket,
-    task_id: str,
-    token: str = Query(..., description="JWT token for authentication")
-):
-    """
-    WebSocket Secure endpoint for real-time task updates
-
-    Usage:
-    - Connect to: /wss/{task_id}?token={jwt_token}
-    - Receives real-time JSON messages about task progress
-    - Automatically disconnects when task completes or fails
-    """
-    ws_manager = get_websocket_manager()
-
-    try:
-        # Verify JWT token from query parameter
-        try:
-            jwt_secret = config.supabase_jwt_secret
-            payload = jwt.decode(
-                token,
-                jwt_secret,
-                algorithms=["HS256"],
-                audience="authenticated"
-            )
-            user_id = payload.get("sub")
-            if not user_id:
-                await websocket.close(code=4001, reason="Invalid token")
-                return
-        except (jwt.ExpiredSignatureError, JWTError):
-            await websocket.close(code=4001, reason="Invalid or expired token")
-            return
-
-        # Connect and verify task ownership
-        connected = await ws_manager.connect(websocket, task_id, user_id)
-        if not connected:
-            return
-
-        logger.info(f"🔌 WebSocket connected: task={task_id}, user={user_id}")
-
-        try:
-            # Keep connection alive and handle disconnection
-            while True:
-                try:
-                    # Wait for client messages (ping/pong, etc.)
-                    message = await websocket.receive_text()
-
-                    # Handle ping/pong for connection keepalive
-                    if message == "ping":
-                        await websocket.send_text("pong")
-
-                except WebSocketDisconnect:
-                    logger.info(f"🔌 WebSocket disconnected: task={task_id}")
-                    break
-
-        except Exception as e:
-            logger.error(f"❌ WebSocket error for task {task_id}: {e}")
-
-    except Exception as e:
-        logger.error(f"❌ WebSocket connection error: {e}")
-        try:
-            await websocket.close(code=4000, reason="Internal server error")
-        except:
-            pass
-    finally:
-        # Clean up connection
-        await ws_manager.disconnect(websocket, task_id)
 
 def check_redis_connection():
     """

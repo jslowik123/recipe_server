@@ -5,6 +5,7 @@ import logging
 import redis
 from typing import Dict, Any, Optional
 from datetime import datetime
+from celery.result import AsyncResult
 
 logger = logging.getLogger(__name__)
 
@@ -12,90 +13,96 @@ logger = logging.getLogger(__name__)
 class QueueManager:
     """
     Queue Manager für Wardroberry
-    Verwaltet die Redis-Queue für asynchrone Verarbeitung
+    Verwaltet Celery Tasks für asynchrone Verarbeitung
     """
-    
+
     def __init__(self):
-        """Initialisiert Redis Connection"""
+        """Initialisiert Redis Connection und Celery"""
         self.redis_client = redis.Redis(
             host=os.getenv('REDIS_HOST', 'localhost'),
             port=int(os.getenv('REDIS_PORT', 6379)),
             db=int(os.getenv('REDIS_DB', 0)),
             decode_responses=True
         )
+
+        # Import Celery App
+        from src.tasks import celery_app, process_clothing_image
+        self.celery_app = celery_app
+        self.process_clothing_task = process_clothing_image
         
-        # Queue Namen
-        self.queue_name = "clothing_processing_queue"
-        self.retry_queue = "clothing_processing_retry"
-        
-    def add_clothing_processing_job(self, clothing_id: str, user_id: str, 
-                                  file_content: bytes, file_name: str, 
-                                  content_type: str, priority: int = 0) -> bool:
+    def add_clothing_processing_job(self, clothing_id: str, user_id: str,
+                                  file_content: bytes, file_name: str,
+                                  content_type: str, priority: int = 0) -> Optional[str]:
         """
-        Fügt einen Kleidungsstück-Verarbeitungsjob zur Queue hinzu
-        
+        Fügt einen Kleidungsstück-Verarbeitungsjob zur Celery Queue hinzu
+
         Args:
             clothing_id: UUID des Kleidungsstücks
             user_id: UUID des Nutzers
             file_content: Binäre Dateidaten
             file_name: Dateiname
             content_type: MIME-Type
-            priority: Priorität (0 = normal, höher = wichtiger)
-            
+            priority: Priorität (0-10, höher = wichtiger)
+
         Returns:
-            True wenn Job erfolgreich hinzugefügt
+            Task ID wenn erfolgreich, None bei Fehler
         """
         try:
             # File Content als Base64 kodieren
             file_content_b64 = base64.b64encode(file_content).decode('utf-8')
-            
-            job_data = {
-                'clothing_id': clothing_id,
-                'user_id': user_id,
-                'file_content_b64': file_content_b64,
-                'file_name': file_name,
-                'content_type': content_type,
-                'created_at': datetime.utcnow().isoformat(),
-                'retry_count': 0,
-                'priority': priority
-            }
-            
-            # Job zu Queue hinzufügen
-            job_json = json.dumps(job_data)
-            
-            if priority > 0:
-                # High priority - an den Anfang der Queue
-                self.redis_client.lpush(self.queue_name, job_json)
-            else:
-                # Normal priority - an das Ende der Queue
-                self.redis_client.rpush(self.queue_name, job_json)
-            
-            logger.info(f"✅ Job hinzugefügt zur Queue: {clothing_id} (Priorität: {priority})")
-            return True
-            
+
+            # Celery Task starten
+            result = self.process_clothing_task.apply_async(
+                args=[clothing_id, user_id, file_content_b64, file_name, content_type],
+                priority=priority,
+                retry=True,
+                retry_policy={
+                    'max_retries': 3,
+                    'interval_start': 60,
+                    'interval_step': 60,
+                    'interval_max': 180,
+                }
+            )
+
+            logger.info(f"✅ Celery Task gestartet: {clothing_id} (Task ID: {result.id}, Priorität: {priority})")
+            return result.id
+
         except Exception as e:
-            logger.error(f"❌ Fehler beim Hinzufügen des Jobs zur Queue: {e}")
-            return False
+            logger.error(f"❌ Fehler beim Starten des Celery Tasks: {e}")
+            return None
     
     def get_queue_stats(self) -> Dict[str, Any]:
         """
-        Holt Statistiken über die Queue
-        
+        Holt Statistiken über die Celery Queue
+
         Returns:
             Dict mit Queue-Statistiken
         """
         try:
-            main_queue_length = self.redis_client.llen(self.queue_name)
-            retry_queue_length = self.redis_client.llen(self.retry_queue)
-            
+            # Celery Inspect API
+            inspect = self.celery_app.control.inspect()
+
+            # Get active tasks
+            active_tasks = inspect.active()
+            active_count = sum(len(tasks) for tasks in (active_tasks or {}).values())
+
+            # Get scheduled tasks
+            scheduled_tasks = inspect.scheduled()
+            scheduled_count = sum(len(tasks) for tasks in (scheduled_tasks or {}).values())
+
+            # Get reserved (waiting) tasks
+            reserved_tasks = inspect.reserved()
+            reserved_count = sum(len(tasks) for tasks in (reserved_tasks or {}).values())
+
             return {
-                'main_queue_length': main_queue_length,
-                'retry_queue_length': retry_queue_length,
-                'total_pending': main_queue_length + retry_queue_length,
+                'active': active_count,
+                'scheduled': scheduled_count,
+                'reserved': reserved_count,
+                'total_pending': active_count + scheduled_count + reserved_count,
                 'timestamp': datetime.utcnow().isoformat()
             }
         except Exception as e:
-            logger.error(f"❌ Fehler beim Holen der Queue-Stats: {e}")
+            logger.error(f"❌ Fehler beim Holen der Celery Stats: {e}")
             return {
                 'error': str(e),
                 'timestamp': datetime.utcnow().isoformat()
@@ -103,52 +110,67 @@ class QueueManager:
     
     def health_check(self) -> bool:
         """
-        Überprüft die Redis-Verbindung
-        
+        Überprüft die Redis-Verbindung und Celery Verfügbarkeit
+
         Returns:
-            True wenn Redis erreichbar
+            True wenn Redis und Celery erreichbar
         """
         try:
+            # Redis Check
             self.redis_client.ping()
+
+            # Celery Worker Check
+            inspect = self.celery_app.control.inspect()
+            stats = inspect.stats()
+            if not stats:
+                logger.warning("⚠️ Keine aktiven Celery Worker gefunden")
+                return False
+
             return True
         except Exception as e:
-            logger.error(f"❌ Redis Health Check fehlgeschlagen: {e}")
+            logger.error(f"❌ Health Check fehlgeschlagen: {e}")
             return False
-    
-    def clear_queue(self, queue_name: Optional[str] = None) -> int:
+
+    def purge_queue(self) -> int:
         """
-        Leert eine Queue (nur für Development/Testing)
-        
-        Args:
-            queue_name: Name der Queue (optional, default: main queue)
-            
+        Leert alle Celery Tasks aus der Queue (nur für Development/Testing)
+
         Returns:
-            Anzahl der gelöschten Jobs
+            Anzahl der gelöschten Tasks
         """
         try:
-            target_queue = queue_name or self.queue_name
-            deleted_count = self.redis_client.delete(target_queue)
-            logger.info(f"🗑️ Queue {target_queue} geleert: {deleted_count} Jobs gelöscht")
-            return deleted_count
+            purged = self.celery_app.control.purge()
+            logger.info(f"🗑️ Celery Queue geleert: {purged} Tasks gelöscht")
+            return purged
         except Exception as e:
             logger.error(f"❌ Fehler beim Leeren der Queue: {e}")
             return 0
-    
-    def peek_next_job(self) -> Optional[Dict[str, Any]]:
+
+    def get_task_status(self, task_id: str) -> Dict[str, Any]:
         """
-        Schaut sich den nächsten Job in der Queue an (ohne ihn zu entfernen)
-        
+        Holt den Status eines bestimmten Celery Tasks
+
+        Args:
+            task_id: Celery Task ID
+
         Returns:
-            Job-Daten oder None wenn Queue leer
+            Dict mit Task-Status
         """
         try:
-            # Schaut sich das erste Element in der Queue an
-            job_json = self.redis_client.lindex(self.queue_name, 0)
-            
-            if job_json:
-                return json.loads(job_json)
-            return None
-            
+            result = AsyncResult(task_id, app=self.celery_app)
+
+            return {
+                'task_id': task_id,
+                'status': result.state,
+                'ready': result.ready(),
+                'successful': result.successful() if result.ready() else None,
+                'result': result.result if result.ready() else None,
+                'timestamp': datetime.utcnow().isoformat()
+            }
         except Exception as e:
-            logger.error(f"❌ Fehler beim Peek der Queue: {e}")
-            return None 
+            logger.error(f"❌ Fehler beim Holen des Task-Status: {e}")
+            return {
+                'task_id': task_id,
+                'error': str(e),
+                'timestamp': datetime.utcnow().isoformat()
+            } 

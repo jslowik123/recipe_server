@@ -1,31 +1,38 @@
 """
-Custom exceptions for TikTok scraping service
+Custom exceptions for Wardroberry API
 """
 
-class TikTokScrapingError(Exception):
-    """Base exception for TikTok scraping operations"""
-    pass
-
-class ApifyError(TikTokScrapingError):
+# Legacy exceptions (kept for compatibility)
+class ApifyError(Exception):
     """Raised when Apify API operations fail"""
     pass
 
-class OpenAIError(TikTokScrapingError):
+class OpenAIError(Exception):
     """Raised when OpenAI API operations fail"""
     pass
 
-class VideoProcessingError(TikTokScrapingError):
-    """Raised when video processing operations fail"""
+
+# Wardroberry exceptions
+class ConfigurationError(Exception):
+    """Raised when configuration is missing or invalid"""
     pass
 
-class ConfigurationError(TikTokScrapingError):
-    """Raised when configuration is invalid or missing"""
+
+class DatabaseError(Exception):
+    """Raised when database operations fail"""
     pass
 
-class VideoDownloadError(VideoProcessingError):
-    """Raised when video download fails"""
+
+class StorageError(Exception):
+    """Raised when file storage operations fail"""
     pass
 
-class FrameExtractionError(VideoProcessingError):
-    """Raised when frame extraction fails"""
+
+class ProcessingError(Exception):
+    """Raised when async processing fails"""
+    pass
+
+
+class QueueError(Exception):
+    """Raised when queue operations fail"""
     pass

@@ -2,7 +2,7 @@
 # Einmalige Infrastructure Setup auf dem VPS
 echo "🚀 Setting up Infrastructure..."
 # Environment laden
-source .env
+source .env_old
 # Infrastructure Networks und Volumes erstellen
 docker compose -f docker-compose.infrastructure.yml up -d
 echo "⏳ Waiting for services to be ready..."

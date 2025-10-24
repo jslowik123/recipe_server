@@ -2,14 +2,17 @@ services:
   # FastAPI App
   web:
     build: .
-    container_name: apify-web
+    container_name: wardroberry-web
     expose:
       - "8000"
     environment:
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis-server:6379/0
+      - REDIS_HOST=redis-server
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_DB=0
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - APIFY_API_TOKEN=${APIFY_API_TOKEN}
-      - APIFY_API_KEY=${APIFY_API_KEY}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
       - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET}
       - VIRTUAL_HOST=${MAIN_DOMAIN}
       - VIRTUAL_PORT=8000
@@ -28,18 +31,21 @@ services:
       - proxy-network
       - app-network
 
-  # Celery Worker
+  # Celery Worker with gevent
   worker:
     build: .
-    container_name: apify-worker
+    container_name: wardroberry-worker
     environment:
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis-server:6379/0
+      - REDIS_HOST=redis-server
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_DB=0
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - APIFY_API_TOKEN=${APIFY_API_TOKEN}
-      - APIFY_API_KEY=${APIFY_API_KEY}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
     volumes:
       - .:/app
-    command: celery -A src.tasks worker --loglevel=info --pool=gevent --concurrency=20
+    command: python -m src.worker
     restart: unless-stopped
     depends_on:
       - redis-check
