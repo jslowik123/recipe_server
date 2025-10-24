@@ -1,0 +1,33 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy Application to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          timeout: 60s
+          command_timeout: 120s
+          debug: true
+          script: |
+            cd ${{ secrets.REPO_PATH }}
+
+            git fetch https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git main
+            git reset --hard FETCH_HEAD
+
+            chmod +x scripts/deploy-app.sh
+            ./scripts/deploy-app.sh
