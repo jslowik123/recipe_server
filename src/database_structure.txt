@@ -1,0 +1,204 @@
+# Wardroberry - Datenbankstruktur
+
+## Überblick
+
+Die Wardroberry-App verwendet Supabase (PostgreSQL) als Backend-Datenbank mit folgenden Haupttabellen:
+
+1. **users** - Nutzerdaten und Profile
+2. **clothes** - Kleidungsstücke der Nutzer
+3. **outfits** - Zusammengestellte Outfits
+4. **outfit_items** - Verknüpfung zwischen Outfits und Kleidungsstücken
+
+## Tabellenstruktur im Detail
+
+### 1. USERS Tabelle
+```
+Tabelle: users
+Zweck: Speichert erweiterte Nutzerinformationen zusätzlich zu Supabase Auth
+
+Spalten:
+- id (UUID, PRIMARY KEY)        → Verknüpft mit auth.users(id)
+- email (TEXT, NOT NULL)        → E-Mail-Adresse des Nutzers
+- first_name (TEXT)             → Vorname
+- last_name (TEXT)              → Nachname
+- created_at (TIMESTAMP)        → Erstellungsdatum
+- updated_at (TIMESTAMP)        → Letzte Aktualisierung
+
+Sicherheit:
+- Row Level Security (RLS) aktiviert
+- Nutzer können nur ihre eigenen Daten lesen/bearbeiten
+```
+
+### 2. CLOTHES Tabelle
+```
+Tabelle: clothes
+Zweck: Speichert alle Kleidungsstücke der Nutzer
+
+Spalten:
+- id (UUID, PRIMARY KEY)        → Eindeutige ID des Kleidungsstücks
+- user_id (UUID, FOREIGN KEY)   → Verknüpfung zu users.id
+- image_url (TEXT, NOT NULL)    → URL zum Bild in Supabase Storage
+- category (TEXT, NOT NULL)     → Kategorie (z.B. "Oberteil", "Hose", "Schuhe")
+- color (TEXT)                  → Hauptfarbe des Kleidungsstücks
+- style (TEXT)                  → Stil (z.B. "casual", "formal", "sport")
+- season (TEXT)                 → Saison (z.B. "Sommer", "Winter", "Ganzjährig")
+- created_at (TIMESTAMP)        → Erstellungsdatum
+- updated_at (TIMESTAMP)        → Letzte Aktualisierung
+
+Beziehungen:
+- user_id → users.id (ON DELETE CASCADE)
+
+Sicherheit:
+- RLS aktiviert
+- Nutzer können nur ihre eigenen Kleidungsstücke verwalten
+```
+
+### 3. OUTFITS Tabelle
+```
+Tabelle: outfits
+Zweck: Speichert zusammengestellte Outfits der Nutzer
+
+Spalten:
+- id (UUID, PRIMARY KEY)        → Eindeutige Outfit-ID
+- user_id (UUID, FOREIGN KEY)   → Verknüpfung zu users.id
+- name (TEXT, NOT NULL)         → Name des Outfits (z.B. "Business Look")
+- description (TEXT)            → Beschreibung oder Notizen
+- weather_condition (TEXT)      → Wetterbedingung (z.B. "sonnig", "regnerisch")
+- occasion (TEXT)               → Anlass (z.B. "Arbeit", "Freizeit", "Date")
+- mood (TEXT)                   → Stimmung (z.B. "selbstbewusst", "entspannt")
+- created_at (TIMESTAMP)        → Erstellungsdatum
+- worn_at (TIMESTAMP)           → Datum des letzten Tragens (NULL wenn nie getragen)
+
+Beziehungen:
+- user_id → users.id (ON DELETE CASCADE)
+
+Sicherheit:
+- RLS aktiviert
+- Nutzer können nur ihre eigenen Outfits verwalten
+```
+
+### 4. OUTFIT_ITEMS Tabelle
+```
+Tabelle: outfit_items
+Zweck: Verknüpfungstabelle zwischen Outfits und Kleidungsstücken (Many-to-Many)
+
+Spalten:
+- id (UUID, PRIMARY KEY)        → Eindeutige ID der Verknüpfung
+- outfit_id (UUID, FOREIGN KEY) → Verknüpfung zu outfits.id
+- clothing_id (UUID, FOREIGN KEY) → Verknüpfung zu clothes.id
+- created_at (TIMESTAMP)        → Erstellungsdatum
+
+Beziehungen:
+- outfit_id → outfits.id (ON DELETE CASCADE)
+- clothing_id → clothes.id (ON DELETE CASCADE)
+
+Sicherheit:
+- RLS aktiviert
+- Nutzer können nur Verknüpfungen ihrer eigenen Outfits verwalten
+```
+
+## Beziehungsdiagramm
+
+```
+users (1) ←──── clothes (N)
+  │
+  └─────→ outfits (N)
+              │
+              └─────→ outfit_items (N) ←──── clothes (N)
+```
+
+**Erklärung:**
+- Ein Nutzer kann viele Kleidungsstücke haben (1:N)
+- Ein Nutzer kann viele Outfits haben (1:N)
+- Ein Outfit kann viele Kleidungsstücke enthalten (N:M über outfit_items)
+- Ein Kleidungsstück kann in vielen Outfits verwendet werden (N:M über outfit_items)
+
+## Datenfluss in der App
+
+### Nutzerregistrierung:
+1. Supabase Auth erstellt Eintrag in `auth.users`
+2. App erstellt entsprechenden Eintrag in `users` Tabelle
+3. Nutzer kann sich anmelden und Profile bearbeiten
+
+### Kleidung hochladen:
+1. Bild wird in Supabase Storage (`clothing-images` Bucket) hochgeladen
+2. KI analysiert Bild (Kategorie, Farbe, Stil)
+3. Eintrag wird in `clothes` Tabelle erstellt
+4. image_url verweist auf Storage-Datei
+
+### Outfit erstellen:
+1. Nutzer wählt Kleidungsstücke aus seinem Kleiderschrank
+2. Eintrag wird in `outfits` Tabelle erstellt
+3. Für jedes ausgewählte Kleidungsstück wird Eintrag in `outfit_items` erstellt
+4. Outfit kann mit Anlass, Wetter, Stimmung verknüpft werden
+
+### KI-Vorschläge:
+1. App ruft Wetterdaten ab
+2. Nutzer gibt Stimmung/Anlass an
+3. KI analysiert verfügbare Kleidungsstücke
+4. Vorschlag wird als neues Outfit gespeichert
+
+## Sicherheitskonzept (Row Level Security)
+
+### Prinzip:
+Jede Tabelle hat RLS-Richtlinien, die sicherstellen, dass Nutzer nur auf ihre eigenen Daten zugreifen können.
+
+### Implementierung:
+- **users**: auth.uid() = users.id
+- **clothes**: auth.uid() = clothes.user_id
+- **outfits**: auth.uid() = outfits.user_id
+- **outfit_items**: auth.uid() muss Besitzer des verknüpften Outfits sein
+
+## Indizes für Performance
+
+```sql
+-- Empfohlene Indizes für bessere Performance:
+CREATE INDEX idx_clothes_user_id ON clothes(user_id);
+CREATE INDEX idx_clothes_category ON clothes(category);
+CREATE INDEX idx_outfits_user_id ON outfits(user_id);
+CREATE INDEX idx_outfit_items_outfit_id ON outfit_items(outfit_id);
+CREATE INDEX idx_outfit_items_clothing_id ON outfit_items(clothing_id);
+```
+
+## Datenschutz und DSGVO
+
+### Personenbezogene Daten:
+- E-Mail, Vor-/Nachname in `users` Tabelle
+- Bilder in Storage (können Personen zeigen)
+
+### Löschung:
+- Bei Nutzer-Löschung werden alle verknüpften Daten automatisch gelöscht (CASCADE)
+- Bilder müssen separat aus Storage gelöscht werden
+
+## Erweiterte Funktionen (Zukunft)
+
+### Mögliche zusätzliche Tabellen:
+1. **wardrobe_analytics** - Statistiken über Trageverhalten
+2. **ai_suggestions** - Protokoll der KI-Vorschläge
+3. **weather_history** - Gespeicherte Wetterdaten
+4. **social_outfits** - Geteilte Outfits (falls Social Features gewünscht)
+
+### Beispiel für Analytics:
+```sql
+CREATE TABLE wardrobe_analytics (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  clothing_id UUID REFERENCES clothes(id) ON DELETE CASCADE,
+  wear_count INTEGER DEFAULT 0,
+  last_worn DATE,
+  favorite_season TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
+## Backup und Wartung
+
+### Supabase Features:
+- Automatische Backups
+- Point-in-Time Recovery
+- Monitoring und Logs
+
+### Überwachung:
+- Tabellengröße überwachen
+- Query-Performance analysieren
+- RLS-Richtlinien regelmäßig überprüfen 
