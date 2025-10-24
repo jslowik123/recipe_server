@@ -25,7 +25,7 @@ async def lifespan(app: fastapi.FastAPI):
     # Startup
     logger.info("🚀 Starting Wardroberry API...")
     logger.info("✅ Application startup complete")
-    logger.info("test")
+    logger.info("test_2")
     yield
 
     # Shutdown
