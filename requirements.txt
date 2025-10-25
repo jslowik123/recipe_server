@@ -2,15 +2,11 @@ fastapi
 uvicorn[standard]
 openai
 python-dotenv
-requests
 redis
 python-jose
-aiohttp
-aiofiles
 pydantic
 supabase
 slowapi
 markdown
-pillow
 celery[redis]
 gevent
