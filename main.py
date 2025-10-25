@@ -45,7 +45,7 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 
 # Include routes
 app.include_router(legal_router)
-app.include_router(wardroberry_router, prefix="/api/wardrobe")
+app.include_router(wardroberry_router)
 app.include_router(support_router)
 
 
