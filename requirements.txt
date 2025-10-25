@@ -10,3 +10,4 @@ slowapi
 markdown
 celery[redis]
 gevent
+python-multipart
