@@ -30,9 +30,17 @@ class StorageManager:
             raise ValueError("User Token ist erforderlich")
 
         # Create client with anon key
-        self.client: Client = create_client(self.supabase_url, self.supabase_key)
+        self.client: Client = create_client(
+            self.supabase_url,
+            self.supabase_key,
+            options={
+                'headers': {
+                    'Authorization': f'Bearer {user_token}'
+                }
+            }
+        )
 
-        # Set user token for authenticated requests (respects RLS)
+        # Set user token for postgrest (database) requests
         self.client.postgrest.auth(user_token)
 
         self.original_bucket = "clothing-images-original"  # Originale Uploads
