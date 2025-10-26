@@ -147,27 +147,41 @@ class StorageManager:
     def delete_image(self, bucket_name: str, file_path: str) -> bool:
         """
         Löscht ein Bild aus Supabase Storage
-        
+
         Args:
             bucket_name: Name des Storage Buckets
             file_path: Pfad zur Datei
-            
+
         Returns:
             True wenn erfolgreich gelöscht
         """
         try:
             result = self.client.storage.from_(bucket_name).remove([file_path])
-            
+
             if result.status_code == 200:
                 self.logger.info(f"Bild gelöscht: {file_path}")
                 return True
             else:
                 self.logger.error(f"Fehler beim Löschen: {result}")
                 return False
-                
+
         except Exception as e:
             self.logger.error(f"Fehler beim Löschen des Bildes: {e}")
             return False
+
+    def delete_image_by_url(self, bucket_name: str, public_url: str) -> bool:
+        """
+        Löscht ein Bild aus Supabase Storage anhand der Public URL
+
+        Args:
+            bucket_name: Name des Storage Buckets
+            public_url: Öffentliche URL des Bildes
+
+        Returns:
+            True wenn erfolgreich gelöscht
+        """
+        file_path = self._extract_path_from_url(public_url, bucket_name)
+        return self.delete_image(bucket_name, file_path)
     
     def _get_file_extension(self, content_type: str) -> str:
         """Ermittelt Dateierweiterung basierend auf MIME-Type"""
@@ -179,6 +193,33 @@ class StorageManager:
             'image/gif': '.gif'
         }
         return extensions.get(content_type, '.jpg')
+
+    def _extract_path_from_url(self, public_url: str, bucket_name: str) -> str:
+        """
+        Extrahiert den Dateipfad aus einer Supabase Public URL
+
+        Args:
+            public_url: Die öffentliche URL
+            bucket_name: Name des Buckets
+
+        Returns:
+            Der Dateipfad innerhalb des Buckets
+        """
+        # Format: {SUPABASE_URL}/storage/v1/object/public/{bucket_name}/{file_path}
+        try:
+            path_prefix = f"/storage/v1/object/public/{bucket_name}/"
+            if path_prefix in public_url:
+                return public_url.split(path_prefix)[1]
+            # Fallback: Versuche nur den letzten Teil nach dem Bucket-Namen
+            parts = public_url.split(f"{bucket_name}/")
+            if len(parts) > 1:
+                return parts[1]
+            # Wenn nichts funktioniert, gib die URL zurück (wird wahrscheinlich fehlschlagen)
+            self.logger.warning(f"Konnte Pfad nicht aus URL extrahieren: {public_url}")
+            return public_url
+        except Exception as e:
+            self.logger.error(f"Fehler beim Extrahieren des Pfads aus URL: {e}")
+            return public_url
     
     def health_check(self) -> bool:
         """

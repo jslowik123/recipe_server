@@ -104,15 +104,18 @@ async def upload_clothing(
         file_data = await file.read()
 
         # Validate image
-        if not storage.validate_image(file_data, file.content_type):
+        is_valid, error_msg = storage.validate_image_file(file.content_type, len(file_data))
+        if not is_valid:
             raise HTTPException(
                 status_code=400,
-                detail="Invalid image file. Supported formats: JPEG, PNG. Max size: 10MB"
+                detail=error_msg
             )
 
         # Upload original image to storage
         logger.info(f"Uploading image for user {user_id[:8]}...")
-        original_url = storage.upload_original_image(user_id, file_data, file.content_type)
+        file_path, original_url = storage.upload_original_image(
+            user_id, file_data, file.filename, file.content_type
+        )
 
         # Create pending clothing entry in database
         logger.info(f"Creating database entry...")
@@ -244,9 +247,9 @@ async def delete_clothing_item(
 
         # Delete from storage
         if item.get('original_image_url'):
-            storage.delete_original_image(item['original_image_url'])
+            storage.delete_image_by_url(storage.original_bucket, item['original_image_url'])
         if item.get('processed_image_url'):
-            storage.delete_processed_image(item['processed_image_url'])
+            storage.delete_image_by_url(storage.processed_bucket, item['processed_image_url'])
 
         # Delete from database
         db.delete_clothing_item(clothing_id)
