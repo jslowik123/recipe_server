@@ -142,40 +142,44 @@ class DatabaseManager:
     # ERWEITERTE CLOTHES MANAGEMENT FÜR ASYNC PROCESSING
     # ======================
     
-    def create_pending_clothing_item(self, user_id: str, original_image_url: str, 
-                                   original_filename: str = None) -> Dict[str, Any]:
+    def create_pending_clothing_item(self, user_id: str, original_image_url: str,
+                                   original_filename: str = None) -> str:
         """
         Erstellt sofort einen Eintrag für ein hochgeladenes Kleidungsstück
         Status: PENDING - wartet auf Verarbeitung
-        
+
         Args:
             user_id: UUID des Nutzers
             original_image_url: URL zum ursprünglichen Bild
             original_filename: Ursprünglicher Dateiname (optional)
-            
+
         Returns:
-            Dict mit den erstellten Kleidungsdaten (ID für Frontend)
+            String mit der ID des erstellten Kleidungsstücks
         """
         try:
             data = {
                 'user_id': user_id,
                 'image_url': original_image_url,
-                'original_filename': original_filename,
                 'processing_status': ProcessingStatus.PENDING.value,
                 'category': 'Wird analysiert...',  # Placeholder
                 'created_at': datetime.now(timezone.utc).isoformat(),
                 'updated_at': datetime.now(timezone.utc).isoformat()
             }
-            
+
+            # Add optional filename if provided
+            if original_filename:
+                data['original_filename'] = original_filename
+
             result = self.client.table('clothes').insert(data).execute()
-            
+
             if not result.data:
                 raise Exception("Kleidungsstück konnte nicht erstellt werden")
-            
+
             clothing_item = result.data[0]
-            self.logger.info(f"Pending Kleidungsstück erstellt: {clothing_item['id']}")
-            
-            return clothing_item
+            clothing_id = clothing_item['id']
+            self.logger.info(f"Pending Kleidungsstück erstellt: {clothing_id}")
+
+            return clothing_id
             
         except APIError as e:
             self.logger.error(f"Fehler beim Erstellen des pending Kleidungsstücks: {e}")
