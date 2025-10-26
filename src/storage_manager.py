@@ -87,7 +87,7 @@ class StorageManager:
             unique_filename = f"{user_id}/{uuid4()}{file_extension}"
             
             # In Supabase Storage hochladen
-            result = self.client.storage.from_(self.original_bucket).upload(
+            self.client.storage.from_(self.original_bucket).upload(
                 path=unique_filename,
                 file=file_content,
                 file_options={
@@ -95,9 +95,6 @@ class StorageManager:
                     "upsert": False  # Keine Überschreibung
                 }
             )
-            
-            if result.status_code not in [200, 201]:
-                raise Exception(f"Upload fehlgeschlagen: {result}")
 
             # Signierte URL generieren (für private Buckets, 1 Jahr gültig)
             signed_url_response = self.client.storage.from_(self.original_bucket).create_signed_url(
@@ -134,7 +131,7 @@ class StorageManager:
             file_extension = self._get_file_extension(content_type)
             unique_filename = f"{user_id}/{clothing_id}_processed{file_extension}"
             
-            result = self.client.storage.from_(self.processed_bucket).upload(
+            self.client.storage.from_(self.processed_bucket).upload(
                 path=unique_filename,
                 file=file_content,
                 file_options={
@@ -142,9 +139,6 @@ class StorageManager:
                     "upsert": True  # Überschreibung erlaubt für Updates
                 }
             )
-            
-            if result.status_code not in [200, 201]:
-                raise Exception(f"Upload des verarbeiteten Bildes fehlgeschlagen: {result}")
 
             # Signierte URL generieren (für private Buckets, 1 Jahr gültig)
             signed_url_response = self.client.storage.from_(self.processed_bucket).create_signed_url(
@@ -175,15 +169,9 @@ class StorageManager:
             True wenn erfolgreich gelöscht
         """
         try:
-            result = self.client.storage.from_(bucket_name).remove([file_path])
-
-            if result.status_code == 200:
-                self.logger.info(f"Bild gelöscht: {file_path}")
-                return True
-            else:
-                self.logger.error(f"Fehler beim Löschen: {result}")
-                return False
-
+            self.client.storage.from_(bucket_name).remove([file_path])
+            self.logger.info(f"Bild gelöscht: {file_path}")
+            return True
         except Exception as e:
             self.logger.error(f"Fehler beim Löschen des Bildes: {e}")
             return False
