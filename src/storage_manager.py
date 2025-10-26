@@ -21,21 +21,12 @@ class StorageManager:
         """
         self.logger = logging.getLogger(__name__)
         self.supabase_url = os.getenv('SUPABASE_URL')
-        self.supabase_anon_key = os.getenv('SUPABASE_ANON_KEY')
 
-        if not self.supabase_url or not self.supabase_anon_key:
-            raise ValueError("Supabase URL und ANON_KEY müssen gesetzt sein")
+        if not self.supabase_url or not user_token:
+            raise ValueError("Supabase URL und User Token müssen gesetzt sein")
 
-        if not user_token:
-            raise ValueError("User token is required for storage operations")
-
-        # Create client with anon key and set user token for RLS
-        self.client: Client = create_client(self.supabase_url, self.supabase_anon_key)
-
-        # Set the Authorization header with the user's JWT token
-        # This ensures RLS policies are applied with the user's identity
-        self.client.postgrest.auth(user_token)
-        self.client.storage.auth(user_token)
+        # Create client directly with user token (respects RLS)
+        self.client: Client = create_client(self.supabase_url, user_token)
 
         self.original_bucket = "clothing-images-original"  # Originale Uploads
         self.processed_bucket = "clothing-images-processed"  # Verarbeitete/extrahierte Bilder
