@@ -3,7 +3,7 @@ import logging
 from typing import Optional, BinaryIO, Tuple
 from uuid import uuid4
 import mimetypes
-from supabase import create_client, Client, ClientOptions
+from supabase import create_client, Client
 
 
 class StorageManager:
@@ -32,16 +32,14 @@ class StorageManager:
         # Create client with anon key
         self.client: Client = create_client(
             self.supabase_url,
-            self.supabase_key,
-            options=ClientOptions(
-                headers={
-                    'Authorization': f'Bearer {user_token}'
-                }
-            )
+            self.supabase_key
         )
 
-        # Set user token for postgrest (database) requests
+        # Set user token for authenticated requests (respects RLS)
         self.client.postgrest.auth(user_token)
+
+        # Set authorization header for storage operations
+        self.client.storage._client.headers['Authorization'] = f'Bearer {user_token}'
 
         self.original_bucket = "clothing-images-original"  # Originale Uploads
         self.processed_bucket = "clothing-images-processed"  # Verarbeitete/extrahierte Bilder
