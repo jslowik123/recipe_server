@@ -160,7 +160,6 @@ class DatabaseManager:
             data = {
                 'user_id': user_id,
                 'image_url': original_image_url,
-                'processing_status': ProcessingStatus.PENDING.value,
                 'category': 'Wird analysiert...',  # Placeholder
                 'created_at': datetime.now(timezone.utc).isoformat(),
                 'updated_at': datetime.now(timezone.utc).isoformat()
