@@ -12,18 +12,30 @@ class StorageManager:
     Verwaltet Upload, Download und Validierung von Bilddateien
     """
     
-    def __init__(self):
+    def __init__(self, user_token: str):
         """
         Initialisiert den StorageManager mit Supabase
+
+        Args:
+            user_token: JWT token for authenticated requests (respects RLS)
         """
         self.logger = logging.getLogger(__name__)
         self.supabase_url = os.getenv('SUPABASE_URL')
-        self.supabase_key = os.getenv('SUPABASE_ANON_KEY')
-        
-        if not self.supabase_url or not self.supabase_key:
-            raise ValueError("Supabase URL und Key müssen gesetzt sein")
-        
-        self.client: Client = create_client(self.supabase_url, self.supabase_key)
+        self.supabase_anon_key = os.getenv('SUPABASE_ANON_KEY')
+
+        if not self.supabase_url or not self.supabase_anon_key:
+            raise ValueError("Supabase URL und ANON_KEY müssen gesetzt sein")
+
+        if not user_token:
+            raise ValueError("User token is required for storage operations")
+
+        # Create client with anon key
+        self.client: Client = create_client(self.supabase_url, self.supabase_anon_key)
+
+        # Set user token for authenticated requests (RLS applies)
+        self.client.auth.set_session(user_token, None)
+        self.client.postgrest.auth(user_token)
+
         self.original_bucket = "clothing-images-original"  # Originale Uploads
         self.processed_bucket = "clothing-images-processed"  # Verarbeitete/extrahierte Bilder
     

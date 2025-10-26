@@ -98,13 +98,8 @@ def health_check():
         health_status["services"]["database"] = False
         health_status["status"] = "degraded"
 
-    # Check Supabase Storage
-    try:
-        storage = StorageManager()
-        health_status["services"]["storage"] = storage.health_check()
-    except Exception as e:
-        health_status["services"]["storage"] = False
-        health_status["status"] = "degraded"
+    # Storage health check skipped (requires user authentication)
+    health_status["services"]["storage"] = "auth_required"
 
     # Check OpenAI
     try:

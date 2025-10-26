@@ -50,6 +50,7 @@ def process_clothing_image(
     self,
     clothing_id: str,
     user_id: str,
+    user_token: str,
     file_content_b64: str,
     file_name: str,
     content_type: str
@@ -61,6 +62,7 @@ def process_clothing_image(
         self: Celery task instance (for retry)
         clothing_id: UUID of clothing item
         user_id: UUID of user
+        user_token: JWT token for authenticated storage access
         file_content_b64: Base64-encoded file content
         file_name: Original filename
         content_type: MIME type
@@ -71,8 +73,8 @@ def process_clothing_image(
     try:
         logger.info(f"🔄 Starting processing for clothing: {clothing_id}")
 
-        # Initialize services
-        storage = StorageManager()
+        # Initialize services with user token
+        storage = StorageManager(user_token=user_token)
         ai = ClothingAI()
         db = DatabaseManager()
 
@@ -155,13 +157,11 @@ def health_check_task() -> Dict[str, bool]:
         Dict with service health status
     """
     try:
-        storage = StorageManager()
         ai = ClothingAI()
         db = DatabaseManager()
 
         return {
             'celery': True,
-            'storage': storage.health_check(),
             'ai': ai.health_check(),
             'database': db.health_check()
         }

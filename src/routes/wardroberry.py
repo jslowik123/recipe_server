@@ -12,7 +12,7 @@ from src.database_manager import DatabaseManager, ProcessingStatus
 from src.storage_manager import StorageManager
 from src.queue_manager import QueueManager
 from src.ai import ClothingAI
-from src.helper.verify_token import verify_token
+from src.helper.verify_token import verify_token, get_user_token
 from src.helper.exceptions import DatabaseError, StorageError, QueueError, ProcessingError
 
 logger = logging.getLogger(__name__)
@@ -69,10 +69,6 @@ def get_db_manager():
     return DatabaseManager()
 
 
-def get_storage_manager():
-    return StorageManager()
-
-
 def get_queue_manager():
     return QueueManager()
 
@@ -85,8 +81,8 @@ def get_ai():
 async def upload_clothing(
     file: UploadFile = File(...),
     user_id: str = Depends(verify_token),
+    user_token: str = Depends(get_user_token),
     db: DatabaseManager = Depends(get_db_manager),
-    storage: StorageManager = Depends(get_storage_manager),
     queue: QueueManager = Depends(get_queue_manager)
 ):
     """
@@ -100,6 +96,9 @@ async def upload_clothing(
     Requires: Bearer token authentication
     """
     try:
+        # Create storage manager with user token for RLS
+        storage = StorageManager(user_token=user_token)
+
         # Read file data
         file_data = await file.read()
 
@@ -126,6 +125,7 @@ async def upload_clothing(
         task_id = queue.add_clothing_processing_job(
             clothing_id=clothing_id,
             user_id=user_id,
+            user_token=user_token,
             file_content=file_data,
             file_name=file.filename,
             content_type=file.content_type,
@@ -227,8 +227,8 @@ async def get_clothing_item(
 async def delete_clothing_item(
     clothing_id: str,
     user_id: str = Depends(verify_token),
-    db: DatabaseManager = Depends(get_db_manager),
-    storage: StorageManager = Depends(get_storage_manager)
+    user_token: str = Depends(get_user_token),
+    db: DatabaseManager = Depends(get_db_manager)
 ):
     """
     Delete a clothing item (database + storage)
@@ -236,6 +236,9 @@ async def delete_clothing_item(
     Requires: Bearer token authentication
     """
     try:
+        # Create storage manager with user token for RLS
+        storage = StorageManager(user_token=user_token)
+
         # Get item to verify ownership
         item = db.get_clothing_item(clothing_id)
 
