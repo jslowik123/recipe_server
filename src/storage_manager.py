@@ -94,12 +94,19 @@ class StorageManager:
             
             if result.status_code not in [200, 201]:
                 raise Exception(f"Upload fehlgeschlagen: {result}")
-            
-            # Public URL generieren
-            public_url = self.client.storage.from_(self.original_bucket).get_public_url(unique_filename)
-            
+
+            # Signierte URL generieren (für private Buckets, 1 Jahr gültig)
+            signed_url_response = self.client.storage.from_(self.original_bucket).create_signed_url(
+                path=unique_filename,
+                expires_in=31536000  # 1 Jahr in Sekunden
+            )
+            signed_url = signed_url_response.get('signedURL') if signed_url_response else None
+
+            if not signed_url:
+                raise Exception("Signierte URL konnte nicht erstellt werden")
+
             self.logger.info(f"Original-Bild hochgeladen: {unique_filename}")
-            return unique_filename, public_url
+            return unique_filename, signed_url
             
         except Exception as e:
             self.logger.error(f"Fehler beim Hochladen des Original-Bildes: {e}")
@@ -134,11 +141,19 @@ class StorageManager:
             
             if result.status_code not in [200, 201]:
                 raise Exception(f"Upload des verarbeiteten Bildes fehlgeschlagen: {result}")
-            
-            public_url = self.client.storage.from_(self.processed_bucket).get_public_url(unique_filename)
-            
+
+            # Signierte URL generieren (für private Buckets, 1 Jahr gültig)
+            signed_url_response = self.client.storage.from_(self.processed_bucket).create_signed_url(
+                path=unique_filename,
+                expires_in=31536000  # 1 Jahr in Sekunden
+            )
+            signed_url = signed_url_response.get('signedURL') if signed_url_response else None
+
+            if not signed_url:
+                raise Exception("Signierte URL konnte nicht erstellt werden")
+
             self.logger.info(f"Verarbeitetes Bild hochgeladen: {unique_filename}")
-            return unique_filename, public_url
+            return unique_filename, signed_url
             
         except Exception as e:
             self.logger.error(f"Fehler beim Hochladen des verarbeiteten Bildes: {e}")
