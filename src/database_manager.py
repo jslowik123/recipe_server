@@ -35,16 +35,17 @@ class DatabaseManager:
                        If not provided, uses ANON_KEY (for health checks, etc.)
         """
         self.supabase_url = os.getenv('SUPABASE_URL')
+        self.supabase_key = os.getenv('SUPABASE_ANON_KEY')
 
+        if not self.supabase_url or not self.supabase_key:
+            raise ValueError("Supabase URL und Key müssen gesetzt sein")
+
+        # Always create client with anon key
+        self.client: Client = create_client(self.supabase_url, self.supabase_key)
+
+        # If user token provided, set it for authenticated requests
         if user_token:
-            # Use user token for authenticated requests (respects RLS)
-            self.client: Client = create_client(self.supabase_url, user_token)
-        else:
-            # Use anon key for unauthenticated requests
-            self.supabase_key = os.getenv('SUPABASE_ANON_KEY')
-            if not self.supabase_url or not self.supabase_key:
-                raise ValueError("Supabase URL und Key müssen gesetzt sein")
-            self.client: Client = create_client(self.supabase_url, self.supabase_key)
+            self.client.postgrest.auth(user_token)
 
         self.logger = logging.getLogger(__name__)
 
