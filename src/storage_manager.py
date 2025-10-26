@@ -29,12 +29,13 @@ class StorageManager:
         if not user_token:
             raise ValueError("User token is required for storage operations")
 
-        # Create client with anon key
+        # Create client with anon key and set user token for RLS
         self.client: Client = create_client(self.supabase_url, self.supabase_anon_key)
 
-        # Set user token for authenticated requests (RLS applies)
-        self.client.auth.set_session(user_token, None)
+        # Set the Authorization header with the user's JWT token
+        # This ensures RLS policies are applied with the user's identity
         self.client.postgrest.auth(user_token)
+        self.client.storage.auth(user_token)
 
         self.original_bucket = "clothing-images-original"  # Originale Uploads
         self.processed_bucket = "clothing-images-processed"  # Verarbeitete/extrahierte Bilder
