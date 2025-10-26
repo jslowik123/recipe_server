@@ -82,7 +82,6 @@ async def upload_clothing(
     file: UploadFile = File(...),
     user_id: str = Depends(verify_token),
     user_token: str = Depends(get_user_token),
-    db: DatabaseManager = Depends(get_db_manager),
     queue: QueueManager = Depends(get_queue_manager)
 ):
     """
@@ -96,8 +95,9 @@ async def upload_clothing(
     Requires: Bearer token authentication
     """
     try:
-        # Create storage manager with user token for RLS
+        # Create managers with user token for RLS
         storage = StorageManager(user_token=user_token)
+        db = DatabaseManager(user_token=user_token)
 
         # Read file data
         file_data = await file.read()
@@ -155,9 +155,9 @@ async def upload_clothing(
 @router.get("/clothes", response_model=List[ClothingItem])
 async def get_user_clothes(
     user_id: str = Depends(verify_token),
+    user_token: str = Depends(get_user_token),
     status: Optional[str] = Query(None, regex="^(PENDING|PROCESSING|COMPLETED|FAILED)$"),
-    category: Optional[str] = Query(None),
-    db: DatabaseManager = Depends(get_db_manager)
+    category: Optional[str] = Query(None)
 ):
     """
     Get all clothing items for authenticated user
@@ -169,6 +169,7 @@ async def get_user_clothes(
     Requires: Bearer token authentication
     """
     try:
+        db = DatabaseManager(user_token=user_token)
         # Get all clothes for user
         clothes = db.get_user_clothes(user_id)
 
@@ -193,7 +194,7 @@ async def get_user_clothes(
 async def get_clothing_item(
     clothing_id: str,
     user_id: str = Depends(verify_token),
-    db: DatabaseManager = Depends(get_db_manager)
+    user_token: str = Depends(get_user_token)
 ):
     """
     Get a specific clothing item by ID
@@ -202,6 +203,7 @@ async def get_clothing_item(
     Returns: 404 if not found or doesn't belong to user
     """
     try:
+        db = DatabaseManager(user_token=user_token)
         item = db.get_clothing_item(clothing_id)
 
         if not item:
@@ -227,8 +229,7 @@ async def get_clothing_item(
 async def delete_clothing_item(
     clothing_id: str,
     user_id: str = Depends(verify_token),
-    user_token: str = Depends(get_user_token),
-    db: DatabaseManager = Depends(get_db_manager)
+    user_token: str = Depends(get_user_token)
 ):
     """
     Delete a clothing item (database + storage)
@@ -236,8 +237,9 @@ async def delete_clothing_item(
     Requires: Bearer token authentication
     """
     try:
-        # Create storage manager with user token for RLS
+        # Create managers with user token for RLS
         storage = StorageManager(user_token=user_token)
+        db = DatabaseManager(user_token=user_token)
 
         # Get item to verify ownership
         item = db.get_clothing_item(clothing_id)
@@ -276,7 +278,7 @@ async def delete_clothing_item(
 async def create_outfit(
     outfit: OutfitCreateRequest,
     user_id: str = Depends(verify_token),
-    db: DatabaseManager = Depends(get_db_manager)
+    user_token: str = Depends(get_user_token)
 ):
     """
     Create a new outfit from clothing items
@@ -284,6 +286,7 @@ async def create_outfit(
     Requires: Bearer token authentication
     """
     try:
+        db = DatabaseManager(user_token=user_token)
         # Verify all clothing items belong to user
         for clothing_id in outfit.clothing_ids:
             item = db.get_clothing_item(clothing_id)
@@ -318,7 +321,7 @@ async def create_outfit(
 @router.get("/outfits", response_model=List[OutfitResponse])
 async def get_user_outfits(
     user_id: str = Depends(verify_token),
-    db: DatabaseManager = Depends(get_db_manager)
+    user_token: str = Depends(get_user_token)
 ):
     """
     Get all outfits for authenticated user
@@ -326,6 +329,7 @@ async def get_user_outfits(
     Requires: Bearer token authentication
     """
     try:
+        db = DatabaseManager(user_token=user_token)
         outfits = db.get_user_outfits(user_id)
         return outfits
 
@@ -341,7 +345,7 @@ async def get_user_outfits(
 async def get_outfit(
     outfit_id: str,
     user_id: str = Depends(verify_token),
-    db: DatabaseManager = Depends(get_db_manager)
+    user_token: str = Depends(get_user_token)
 ):
     """
     Get a specific outfit by ID
@@ -349,6 +353,7 @@ async def get_outfit(
     Requires: Bearer token authentication
     """
     try:
+        db = DatabaseManager(user_token=user_token)
         outfit = db.get_outfit(outfit_id)
 
         if not outfit:
@@ -373,7 +378,7 @@ async def get_outfit(
 async def delete_outfit(
     outfit_id: str,
     user_id: str = Depends(verify_token),
-    db: DatabaseManager = Depends(get_db_manager)
+    user_token: str = Depends(get_user_token)
 ):
     """
     Delete an outfit
@@ -381,6 +386,7 @@ async def delete_outfit(
     Requires: Bearer token authentication
     """
     try:
+        db = DatabaseManager(user_token=user_token)
         # Verify ownership
         outfit = db.get_outfit(outfit_id)
 
@@ -407,7 +413,7 @@ async def delete_outfit(
 @router.get("/stats")
 async def get_user_stats(
     user_id: str = Depends(verify_token),
-    db: DatabaseManager = Depends(get_db_manager)
+    user_token: str = Depends(get_user_token)
 ):
     """
     Get user wardrobe statistics
@@ -415,6 +421,7 @@ async def get_user_stats(
     Requires: Bearer token authentication
     """
     try:
+        db = DatabaseManager(user_token=user_token)
         stats = db.get_user_statistics(user_id)
         return stats
 

@@ -76,7 +76,7 @@ def process_clothing_image(
         # Initialize services with user token
         storage = StorageManager(user_token=user_token)
         ai = ClothingAI()
-        db = DatabaseManager()
+        db = DatabaseManager(user_token=user_token)
 
         # Update status to processing
         db.update_processing_status(clothing_id, ProcessingStatus.PROCESSING)
@@ -130,7 +130,7 @@ def process_clothing_image(
 
         # Mark as failed in database
         try:
-            db = DatabaseManager()
+            db = DatabaseManager(user_token=user_token)
             db.mark_processing_failed(clothing_id, str(e))
         except Exception as db_error:
             logger.error(f"❌ Additional DB error: {db_error}")

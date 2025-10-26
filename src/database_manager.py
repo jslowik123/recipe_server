@@ -26,21 +26,26 @@ class DatabaseManager:
     - outfit_items (Outfit-Kleidung Verknüpfungen)
     """
     
-    def __init__(self, supabase_url: str = None, supabase_key: str = None):
+    def __init__(self, user_token: str = None):
         """
         Initialisiert den DatabaseManager
-        
+
         Args:
-            supabase_url: Supabase URL (falls nicht als ENV Variable gesetzt)
-            supabase_key: Supabase Anon Key (falls nicht als ENV Variable gesetzt)
+            user_token: Optional JWT token for authenticated requests (respects RLS)
+                       If not provided, uses ANON_KEY (for health checks, etc.)
         """
-        self.supabase_url = supabase_url or os.getenv('SUPABASE_URL')
-        self.supabase_key = supabase_key or os.getenv('SUPABASE_ANON_KEY')
-        
-        if not self.supabase_url or not self.supabase_key:
-            raise ValueError("Supabase URL und Key müssen gesetzt sein")
-        
-        self.client: Client = create_client(self.supabase_url, self.supabase_key)
+        self.supabase_url = os.getenv('SUPABASE_URL')
+
+        if user_token:
+            # Use user token for authenticated requests (respects RLS)
+            self.client: Client = create_client(self.supabase_url, user_token)
+        else:
+            # Use anon key for unauthenticated requests
+            self.supabase_key = os.getenv('SUPABASE_ANON_KEY')
+            if not self.supabase_url or not self.supabase_key:
+                raise ValueError("Supabase URL und Key müssen gesetzt sein")
+            self.client: Client = create_client(self.supabase_url, self.supabase_key)
+
         self.logger = logging.getLogger(__name__)
 
     # ======================
