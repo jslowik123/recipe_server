@@ -3,7 +3,7 @@ import logging
 from typing import Optional, BinaryIO, Tuple
 from uuid import uuid4
 import mimetypes
-from supabase import create_client, Client
+from supabase import create_client, Client, ClientOptions
 
 
 class StorageManager:
@@ -33,11 +33,11 @@ class StorageManager:
         self.client: Client = create_client(
             self.supabase_url,
             self.supabase_key,
-            options={
-                'headers': {
+            options=ClientOptions(
+                headers={
                     'Authorization': f'Bearer {user_token}'
                 }
-            }
+            )
         )
 
         # Set user token for postgrest (database) requests
