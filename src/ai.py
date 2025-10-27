@@ -201,28 +201,59 @@ class ClothingAI:
     def encode_image(self, image_path):
         with open(image_path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode('utf-8')
-    
-    def extract_clothing(self, image_content: bytes) -> bytes:
+
+    def extract_clothing(self, image_content: bytes) -> Dict[str, Any]:
         """
-        Extrahiert Kleidungsstücke aus einem Bild (Hintergrund entfernen)
-        
-        Für jetzt geben wir das ursprüngliche Bild zurück.
-        TODO: Implementiere echte Hintergrund-Entfernung
-        
+        Extrahiert Kleidungsstücke aus einem Bild mit OpenAI Vision API
+
         Args:
             image_content: Binärdaten des Bildes
-            
+
         Returns:
-            Bytes des verarbeiteten Bildes
+            Dict mit extrahierten Kleidungsstücken
         """
         try:
-            # Für jetzt: geben wir das Original-Bild zurück
-            # TODO: Hier echte Hintergrund-Entfernung implementieren
-            self.logger.info("Hintergrund-Entfernung (Placeholder - gibt Original zurück)")
-            return image_content
-            
+            # Eingehende Bildbytes in Base64 konvertieren
+            base64_image = base64.b64encode(image_content).decode("utf-8")
+
+            prompt = "Erstelle ein fotorealistisches Bild des Kleidungsstücks aus dem Referenzbild, isoliert auf weißem Hintergrund."
+
+            response = self.client.responses.create(
+                model="gpt-4.1",
+                input=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "input_text", "text": prompt},
+                            {
+                                "type": "input_image",
+                                "image_url": f"data:image/jpeg;base64,{base64_image}",
+                            },
+                        ],
+                    }
+                ],
+                tools=[{
+                    "type": "image_generation",
+                    "quality": "high",
+                }],
+            )
+
+
+            image_generation_calls = [
+                output for output in response.output if output.type == "image_generation_call"
+            ]
+
+            if image_generation_calls:
+                generated_image_base64 = image_generation_calls[0].result
+                generated_image_bytes = base64.b64decode(generated_image_base64)
+                # Optional: lokal speichern zu Debug-Zwecken
+                with open("ergebnis.png", "wb") as f:
+                    f.write(generated_image_bytes)
+                return generated_image_bytes
+            else:
+                raise RuntimeError("Image generation call fehlgeschlagen")
         except Exception as e:
-            self.logger.error(f"Fehler bei der Hintergrund-Entfernung: {e}")
+            self.logger.error(f"Fehler bei der Kleidungsanalyse: {e}")
             raise
     
     def health_check(self) -> bool:
