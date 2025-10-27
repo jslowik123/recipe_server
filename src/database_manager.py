@@ -26,21 +26,27 @@ class DatabaseManager:
     - outfit_items (Outfit-Kleidung Verknüpfungen)
     """
     
-    def __init__(self, supabase_url: str = None, supabase_key: str = None):
+    def __init__(self, user_token: str = None):
         """
         Initialisiert den DatabaseManager
-        
+
         Args:
-            supabase_url: Supabase URL (falls nicht als ENV Variable gesetzt)
-            supabase_key: Supabase Anon Key (falls nicht als ENV Variable gesetzt)
+            user_token: Optional JWT token for authenticated requests (respects RLS)
+                       If not provided, uses ANON_KEY (for health checks, etc.)
         """
-        self.supabase_url = supabase_url or os.getenv('SUPABASE_URL')
-        self.supabase_key = supabase_key or os.getenv('SUPABASE_ANON_KEY')
-        
+        self.supabase_url = os.getenv('SUPABASE_URL')
+        self.supabase_key = os.getenv('SUPABASE_ANON_KEY')
+
         if not self.supabase_url or not self.supabase_key:
             raise ValueError("Supabase URL und Key müssen gesetzt sein")
-        
+
+        # Always create client with anon key
         self.client: Client = create_client(self.supabase_url, self.supabase_key)
+
+        # If user token provided, set it for authenticated requests
+        if user_token:
+            self.client.postgrest.auth(user_token)
+
         self.logger = logging.getLogger(__name__)
 
     # ======================
@@ -142,40 +148,43 @@ class DatabaseManager:
     # ERWEITERTE CLOTHES MANAGEMENT FÜR ASYNC PROCESSING
     # ======================
     
-    def create_pending_clothing_item(self, user_id: str, original_image_url: str, 
-                                   original_filename: str = None) -> Dict[str, Any]:
+    def create_pending_clothing_item(self, user_id: str, original_image_url: str,
+                                   original_filename: str = None) -> str:
         """
         Erstellt sofort einen Eintrag für ein hochgeladenes Kleidungsstück
         Status: PENDING - wartet auf Verarbeitung
-        
+
         Args:
             user_id: UUID des Nutzers
             original_image_url: URL zum ursprünglichen Bild
             original_filename: Ursprünglicher Dateiname (optional)
-            
+
         Returns:
-            Dict mit den erstellten Kleidungsdaten (ID für Frontend)
+            String mit der ID des erstellten Kleidungsstücks
         """
         try:
             data = {
                 'user_id': user_id,
                 'image_url': original_image_url,
-                'original_filename': original_filename,
-                'processing_status': ProcessingStatus.PENDING.value,
                 'category': 'Wird analysiert...',  # Placeholder
                 'created_at': datetime.now(timezone.utc).isoformat(),
                 'updated_at': datetime.now(timezone.utc).isoformat()
             }
-            
+
+            # Add optional filename if provided
+            if original_filename:
+                data['original_filename'] = original_filename
+
             result = self.client.table('clothes').insert(data).execute()
-            
+
             if not result.data:
                 raise Exception("Kleidungsstück konnte nicht erstellt werden")
-            
+
             clothing_item = result.data[0]
-            self.logger.info(f"Pending Kleidungsstück erstellt: {clothing_item['id']}")
-            
-            return clothing_item
+            clothing_id = clothing_item['id']
+            self.logger.info(f"Pending Kleidungsstück erstellt: {clothing_id}")
+
+            return clothing_id
             
         except APIError as e:
             self.logger.error(f"Fehler beim Erstellen des pending Kleidungsstücks: {e}")
@@ -754,41 +763,63 @@ class DatabaseManager:
     def get_user_statistics(self, user_id: str) -> Dict[str, Any]:
         """
         Holt Statistiken für einen Nutzer
-        
+
         Args:
             user_id: UUID des Nutzers
-            
+
         Returns:
-            Dict mit verschiedenen Statistiken
+            Dict mit Kleidungsstück-Statistiken
         """
         try:
-            # Anzahl Kleidungsstücke
+            # Anzahl Kleidungsstücke gesamt
             clothes_result = self.client.table('clothes').select('id', count='exact').eq('user_id', user_id).execute()
-            clothes_count = clothes_result.count or 0
-            
-            # Anzahl Outfits
-            outfits_result = self.client.table('outfits').select('id', count='exact').eq('user_id', user_id).execute()
-            outfits_count = outfits_result.count or 0
-            
-            # Getragene Outfits
-            worn_outfits_result = self.client.table('outfits').select('id', count='exact').eq('user_id', user_id).not_.is_('worn_at', 'null').execute()
-            worn_outfits_count = worn_outfits_result.count or 0
-            
-            # Kategorien-Verteilung
-            categories_result = self.client.table('clothes').select('category').eq('user_id', user_id).execute()
+            total_count = clothes_result.count or 0
+
+            # Anzahl nach Processing-Status
+            completed_result = self.client.table('clothes').select('id', count='exact')\
+                .eq('user_id', user_id)\
+                .eq('processing_status', ProcessingStatus.COMPLETED.value)\
+                .execute()
+            completed_count = completed_result.count or 0
+
+            processing_result = self.client.table('clothes').select('id', count='exact')\
+                .eq('user_id', user_id)\
+                .eq('processing_status', ProcessingStatus.PROCESSING.value)\
+                .execute()
+            processing_count = processing_result.count or 0
+
+            pending_result = self.client.table('clothes').select('id', count='exact')\
+                .eq('user_id', user_id)\
+                .eq('processing_status', ProcessingStatus.PENDING.value)\
+                .execute()
+            pending_count = pending_result.count or 0
+
+            failed_result = self.client.table('clothes').select('id', count='exact')\
+                .eq('user_id', user_id)\
+                .eq('processing_status', ProcessingStatus.FAILED.value)\
+                .execute()
+            failed_count = failed_result.count or 0
+
+            # Kategorien-Verteilung (nur completed items)
+            categories_result = self.client.table('clothes').select('category')\
+                .eq('user_id', user_id)\
+                .eq('processing_status', ProcessingStatus.COMPLETED.value)\
+                .execute()
             categories = {}
             for item in categories_result.data or []:
                 category = item['category']
-                categories[category] = categories.get(category, 0) + 1
-            
+                if category and category != 'Wird analysiert...':
+                    categories[category] = categories.get(category, 0) + 1
+
             return {
-                'total_clothes': clothes_count,
-                'total_outfits': outfits_count,
-                'worn_outfits': worn_outfits_count,
-                'categories_distribution': categories,
-                'unworn_outfits': outfits_count - worn_outfits_count
+                'total_clothes': total_count,
+                'completed': completed_count,
+                'processing': processing_count,
+                'pending': pending_count,
+                'failed': failed_count,
+                'categories_distribution': categories
             }
-            
+
         except APIError as e:
             self.logger.error(f"Fehler beim Laden der Statistiken: {e}")
             raise

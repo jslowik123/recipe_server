@@ -1,7 +1,7 @@
 """
 Wardroberry API Routes - Wardrobe Management
 """
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Query
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Optional
@@ -12,8 +12,9 @@ from src.database_manager import DatabaseManager, ProcessingStatus
 from src.storage_manager import StorageManager
 from src.queue_manager import QueueManager
 from src.ai import ClothingAI
-from src.helper.verify_token import verify_token
+from src.helper.verify_token import verify_token, get_user_token, verify_token_sync
 from src.helper.exceptions import DatabaseError, StorageError, QueueError, ProcessingError
+from src.websocket_manager import get_websocket_manager
 
 logger = logging.getLogger(__name__)
 
@@ -43,22 +44,6 @@ class ClothingItem(BaseModel):
     created_at: str
 
 
-class OutfitCreateRequest(BaseModel):
-    name: str
-    clothing_ids: List[str]
-    occasion: Optional[str] = None
-
-
-class OutfitResponse(BaseModel):
-    id: str
-    user_id: str
-    name: str
-    occasion: Optional[str]
-    times_worn: int
-    created_at: str
-    items: List[ClothingItem]
-
-
 class QueueStatsResponse(BaseModel):
     processing_queue_size: int
     retry_queue_size: int
@@ -67,10 +52,6 @@ class QueueStatsResponse(BaseModel):
 # Dependency: Get services
 def get_db_manager():
     return DatabaseManager()
-
-
-def get_storage_manager():
-    return StorageManager()
 
 
 def get_queue_manager():
@@ -85,8 +66,7 @@ def get_ai():
 async def upload_clothing(
     file: UploadFile = File(...),
     user_id: str = Depends(verify_token),
-    db: DatabaseManager = Depends(get_db_manager),
-    storage: StorageManager = Depends(get_storage_manager),
+    user_token: str = Depends(get_user_token),
     queue: QueueManager = Depends(get_queue_manager)
 ):
     """
@@ -100,6 +80,10 @@ async def upload_clothing(
     Requires: Bearer token authentication
     """
     try:
+        # Create managers with user token for RLS
+        storage = StorageManager(user_token=user_token)
+        db = DatabaseManager(user_token=user_token)
+
         # Read file data
         file_data = await file.read()
 
@@ -126,6 +110,7 @@ async def upload_clothing(
         task_id = queue.add_clothing_processing_job(
             clothing_id=clothing_id,
             user_id=user_id,
+            user_token=user_token,
             file_content=file_data,
             file_name=file.filename,
             content_type=file.content_type,
@@ -155,9 +140,9 @@ async def upload_clothing(
 @router.get("/clothes", response_model=List[ClothingItem])
 async def get_user_clothes(
     user_id: str = Depends(verify_token),
+    user_token: str = Depends(get_user_token),
     status: Optional[str] = Query(None, regex="^(PENDING|PROCESSING|COMPLETED|FAILED)$"),
-    category: Optional[str] = Query(None),
-    db: DatabaseManager = Depends(get_db_manager)
+    category: Optional[str] = Query(None)
 ):
     """
     Get all clothing items for authenticated user
@@ -169,6 +154,7 @@ async def get_user_clothes(
     Requires: Bearer token authentication
     """
     try:
+        db = DatabaseManager(user_token=user_token)
         # Get all clothes for user
         clothes = db.get_user_clothes(user_id)
 
@@ -193,7 +179,7 @@ async def get_user_clothes(
 async def get_clothing_item(
     clothing_id: str,
     user_id: str = Depends(verify_token),
-    db: DatabaseManager = Depends(get_db_manager)
+    user_token: str = Depends(get_user_token)
 ):
     """
     Get a specific clothing item by ID
@@ -202,6 +188,7 @@ async def get_clothing_item(
     Returns: 404 if not found or doesn't belong to user
     """
     try:
+        db = DatabaseManager(user_token=user_token)
         item = db.get_clothing_item(clothing_id)
 
         if not item:
@@ -227,8 +214,7 @@ async def get_clothing_item(
 async def delete_clothing_item(
     clothing_id: str,
     user_id: str = Depends(verify_token),
-    db: DatabaseManager = Depends(get_db_manager),
-    storage: StorageManager = Depends(get_storage_manager)
+    user_token: str = Depends(get_user_token)
 ):
     """
     Delete a clothing item (database + storage)
@@ -236,6 +222,10 @@ async def delete_clothing_item(
     Requires: Bearer token authentication
     """
     try:
+        # Create managers with user token for RLS
+        storage = StorageManager(user_token=user_token)
+        db = DatabaseManager(user_token=user_token)
+
         # Get item to verify ownership
         item = db.get_clothing_item(clothing_id)
 
@@ -269,142 +259,10 @@ async def delete_clothing_item(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.post("/outfits", response_model=OutfitResponse)
-async def create_outfit(
-    outfit: OutfitCreateRequest,
-    user_id: str = Depends(verify_token),
-    db: DatabaseManager = Depends(get_db_manager)
-):
-    """
-    Create a new outfit from clothing items
-
-    Requires: Bearer token authentication
-    """
-    try:
-        # Verify all clothing items belong to user
-        for clothing_id in outfit.clothing_ids:
-            item = db.get_clothing_item(clothing_id)
-            if not item or item.get('user_id') != user_id:
-                raise HTTPException(
-                    status_code=403,
-                    detail=f"Clothing item {clothing_id} not found or not authorized"
-                )
-
-        # Create outfit
-        outfit_id = db.create_outfit(
-            user_id=user_id,
-            name=outfit.name,
-            clothing_ids=outfit.clothing_ids,
-            occasion=outfit.occasion
-        )
-
-        # Return created outfit with items
-        created_outfit = db.get_outfit(outfit_id)
-        return created_outfit
-
-    except DatabaseError as e:
-        logger.error(f"Database error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-
-@router.get("/outfits", response_model=List[OutfitResponse])
-async def get_user_outfits(
-    user_id: str = Depends(verify_token),
-    db: DatabaseManager = Depends(get_db_manager)
-):
-    """
-    Get all outfits for authenticated user
-
-    Requires: Bearer token authentication
-    """
-    try:
-        outfits = db.get_user_outfits(user_id)
-        return outfits
-
-    except DatabaseError as e:
-        logger.error(f"Database error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
-    except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-
-@router.get("/outfits/{outfit_id}", response_model=OutfitResponse)
-async def get_outfit(
-    outfit_id: str,
-    user_id: str = Depends(verify_token),
-    db: DatabaseManager = Depends(get_db_manager)
-):
-    """
-    Get a specific outfit by ID
-
-    Requires: Bearer token authentication
-    """
-    try:
-        outfit = db.get_outfit(outfit_id)
-
-        if not outfit:
-            raise HTTPException(status_code=404, detail="Outfit not found")
-
-        if outfit.get('user_id') != user_id:
-            raise HTTPException(status_code=403, detail="Not authorized to access this outfit")
-
-        return outfit
-
-    except DatabaseError as e:
-        logger.error(f"Database error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-
-@router.delete("/outfits/{outfit_id}")
-async def delete_outfit(
-    outfit_id: str,
-    user_id: str = Depends(verify_token),
-    db: DatabaseManager = Depends(get_db_manager)
-):
-    """
-    Delete an outfit
-
-    Requires: Bearer token authentication
-    """
-    try:
-        # Verify ownership
-        outfit = db.get_outfit(outfit_id)
-
-        if not outfit:
-            raise HTTPException(status_code=404, detail="Outfit not found")
-
-        if outfit.get('user_id') != user_id:
-            raise HTTPException(status_code=403, detail="Not authorized to delete this outfit")
-
-        db.delete_outfit(outfit_id)
-
-        return {"message": "Outfit deleted successfully"}
-
-    except DatabaseError as e:
-        logger.error(f"Database error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-
 @router.get("/stats")
 async def get_user_stats(
     user_id: str = Depends(verify_token),
-    db: DatabaseManager = Depends(get_db_manager)
+    user_token: str = Depends(get_user_token)
 ):
     """
     Get user wardrobe statistics
@@ -412,6 +270,7 @@ async def get_user_stats(
     Requires: Bearer token authentication
     """
     try:
+        db = DatabaseManager(user_token=user_token)
         stats = db.get_user_statistics(user_id)
         return stats
 
@@ -436,8 +295,8 @@ async def get_queue_stats(
     try:
         stats = queue.get_queue_stats()
         return QueueStatsResponse(
-            processing_queue_size=stats['clothing_processing_queue'],
-            retry_queue_size=stats['clothing_processing_retry']
+            processing_queue_size=stats.get('total_pending', 0),
+            retry_queue_size=0  # Retries are handled automatically by Celery
         )
 
     except QueueError as e:
@@ -446,3 +305,106 @@ async def get_queue_stats(
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.websocket("/ws/clothing/{clothing_id}")
+async def websocket_clothing_updates(
+    websocket: WebSocket,
+    clothing_id: str
+):
+    """
+    WebSocket endpoint for real-time clothing processing updates
+
+    Authentication: JWT token in Sec-WebSocket-Protocol header
+    Format: Sec-WebSocket-Protocol: Bearer_<token>
+
+    Messages sent:
+    - type: "connected" - Connection established
+    - type: "progress" - Processing progress update (step, total_steps, message, progress_percent)
+    - type: "completed" - Processing completed (result data)
+    - type: "error" - Processing failed (error message)
+    - type: "status" - General status update
+
+    Example client (JavaScript):
+        const ws = new WebSocket('ws://localhost:8000/ws/clothing/<clothing_id>', ['Bearer_' + token]);
+    """
+    from fastapi.security import HTTPAuthorizationCredentials
+    from src.helper.verify_token import TokenError
+
+    user_id = None
+
+    try:
+        # Extract JWT from Sec-WebSocket-Protocol header
+        # Format: ["Bearer_<token>", ...]
+        protocols = websocket.headers.get("sec-websocket-protocol", "")
+        token = None
+
+        # Parse protocols (can be comma-separated)
+        for protocol in protocols.split(","):
+            protocol = protocol.strip()
+            if protocol.startswith("Bearer_"):
+                token = protocol.replace("Bearer_", "")
+                break
+
+        if not token:
+            await websocket.close(code=4001, reason="Missing authentication token")
+            return
+
+        # Verify JWT token
+        try:
+            credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+            user_id = verify_token_sync(credentials)
+        except TokenError as e:
+            logger.error(f"Token verification failed: {e.technical_details}")
+            await websocket.close(code=4003, reason="Invalid or expired token")
+            return
+
+        # Verify clothing item belongs to user
+        try:
+            db = DatabaseManager(user_token=token)
+            clothing_item = db.get_clothing_item(clothing_id)
+
+            if not clothing_item:
+                await websocket.close(code=4004, reason="Clothing item not found")
+                return
+
+            if clothing_item.get('user_id') != user_id:
+                await websocket.close(code=4003, reason="Not authorized to access this item")
+                return
+
+        except Exception as e:
+            logger.error(f"Database error during WebSocket auth: {e}")
+            await websocket.close(code=5000, reason="Internal server error")
+            return
+
+        # Get WebSocket manager and connect
+        ws_manager = get_websocket_manager()
+        success = await ws_manager.connect(websocket, clothing_id, user_id)
+
+        if not success:
+            await websocket.close(code=5000, reason="Failed to establish connection")
+            return
+
+        # Keep connection alive and handle messages
+        try:
+            while True:
+                # Wait for messages from client (optional - can be used for heartbeat)
+                data = await websocket.receive_text()
+                # Echo back for heartbeat/ping-pong
+                if data == "ping":
+                    await websocket.send_text("pong")
+
+        except WebSocketDisconnect:
+            logger.info(f"WebSocket disconnected for clothing {clothing_id}")
+        except Exception as e:
+            logger.error(f"WebSocket error: {e}")
+        finally:
+            # Cleanup connection
+            await ws_manager.disconnect(websocket, clothing_id)
+
+    except Exception as e:
+        logger.error(f"Unexpected error in WebSocket endpoint: {e}")
+        try:
+            await websocket.close(code=5000, reason="Internal server error")
+        except:
+            pass

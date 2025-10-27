@@ -22,6 +22,7 @@ class QueueManager:
             host=os.getenv('REDIS_HOST', 'localhost'),
             port=int(os.getenv('REDIS_PORT', 6379)),
             db=int(os.getenv('REDIS_DB', 0)),
+            password=os.getenv('REDIS_PASSWORD'),
             decode_responses=True
         )
 
@@ -31,7 +32,7 @@ class QueueManager:
         self.process_clothing_task = process_clothing_image
         
     def add_clothing_processing_job(self, clothing_id: str, user_id: str,
-                                  file_content: bytes, file_name: str,
+                                  user_token: str, file_content: bytes, file_name: str,
                                   content_type: str, priority: int = 0) -> Optional[str]:
         """
         Fügt einen Kleidungsstück-Verarbeitungsjob zur Celery Queue hinzu
@@ -39,6 +40,7 @@ class QueueManager:
         Args:
             clothing_id: UUID des Kleidungsstücks
             user_id: UUID des Nutzers
+            user_token: JWT token for authenticated storage access
             file_content: Binäre Dateidaten
             file_name: Dateiname
             content_type: MIME-Type
@@ -53,7 +55,7 @@ class QueueManager:
 
             # Celery Task starten
             result = self.process_clothing_task.apply_async(
-                args=[clothing_id, user_id, file_content_b64, file_name, content_type],
+                args=[clothing_id, user_id, user_token, file_content_b64, file_name, content_type],
                 priority=priority,
                 retry=True,
                 retry_policy={

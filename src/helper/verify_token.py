@@ -53,3 +53,13 @@ def verify_token_sync(credentials: HTTPAuthorizationCredentials) -> str:
 async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Async wrapper for JWT verification (for dependency injection)"""
     return verify_token_sync(credentials)
+
+async def get_user_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
+    """
+    Extract the raw JWT token from the Authorization header
+    Returns the token string for passing to Supabase client
+    """
+    # Verify token is valid first
+    verify_token_sync(credentials)
+    # Return the raw token
+    return credentials.credentials

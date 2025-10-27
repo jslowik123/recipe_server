@@ -50,17 +50,20 @@ def process_clothing_image(
     self,
     clothing_id: str,
     user_id: str,
+    user_token: str,
     file_content_b64: str,
     file_name: str,
     content_type: str
 ) -> Dict[str, Any]:
     """
     Celery Task: Process clothing image with AI analysis
+    Sends real-time WebSocket updates via Redis Pub/Sub
 
     Args:
         self: Celery task instance (for retry)
         clothing_id: UUID of clothing item
         user_id: UUID of user
+        user_token: JWT token for authenticated storage access
         file_content_b64: Base64-encoded file content
         file_name: Original filename
         content_type: MIME type
@@ -68,25 +71,37 @@ def process_clothing_image(
     Returns:
         Dict with processing results
     """
+    from src.redis_publisher import RedisPublisher
+
+    # Initialize Redis publisher for WebSocket updates
+    publisher = RedisPublisher()
+
     try:
         logger.info(f"🔄 Starting processing for clothing: {clothing_id}")
 
-        # Initialize services
-        storage = StorageManager()
+        # Initialize services with user token
+        storage = StorageManager(user_token=user_token)
         ai = ClothingAI()
-        db = DatabaseManager()
+        db = DatabaseManager(user_token=user_token)
 
-        # Update status to processing
+        # Total steps for progress tracking
+        TOTAL_STEPS = 4
+
+        # Step 1: Update status to processing
+        publisher.publish_progress(clothing_id, 1, TOTAL_STEPS, "Starting image processing...")
         db.update_processing_status(clothing_id, ProcessingStatus.PROCESSING)
 
         # Decode file content
         file_content = base64.b64decode(file_content_b64)
 
-        # 1. Extract clothing from background
+        # Step 2: Extract clothing from background
         logger.info("🖼️ Extracting clothing from background...")
+        publisher.publish_progress(clothing_id, 2, TOTAL_STEPS, "Extracting clothing from background...")
         extracted_image_bytes = ai.extract_clothing(file_content)
 
-        # 2. Upload extracted image
+        # Step 3: Upload extracted image
+        logger.info("📤 Uploading processed image...")
+        publisher.publish_progress(clothing_id, 3, TOTAL_STEPS, "Uploading processed image...")
         extracted_path, extracted_url = storage.upload_processed_image(
             user_id=user_id,
             clothing_id=clothing_id,
@@ -94,11 +109,12 @@ def process_clothing_image(
             content_type=content_type
         )
 
-        # 3. AI Analysis
+        # Step 4: AI Analysis
         logger.info("🤖 Performing AI analysis...")
+        publisher.publish_progress(clothing_id, 4, TOTAL_STEPS, "Analyzing clothing with AI...")
         ai_analysis = ai.analyze_clothing_image(extracted_image_bytes)
 
-        # 4. Mark as completed
+        # Mark as completed in database
         completed_item = db.complete_clothing_processing(
             clothing_id=clothing_id,
             extracted_image_url=extracted_url,
@@ -114,24 +130,44 @@ def process_clothing_image(
         logger.info(f"✅ Processing completed for: {clothing_id}")
         logger.info(f"🎯 Detected: {ai_analysis['category']} ({ai_analysis['color']}, {ai_analysis['style']})")
 
-        return {
-            'success': True,
+        # Send completion notification via WebSocket
+        result = {
             'clothing_id': clothing_id,
             'category': ai_analysis['category'],
             'color': ai_analysis['color'],
             'style': ai_analysis['style'],
+            'season': ai_analysis['season'],
+            'material': ai_analysis['material'],
+            'occasion': ai_analysis['occasion'],
+            'confidence': ai_analysis['confidence'],
+            'processed_image_url': extracted_url,
             'processed_at': datetime.utcnow().isoformat()
+        }
+        publisher.publish_completion(clothing_id, result)
+
+        # Cleanup
+        publisher.close()
+
+        return {
+            'success': True,
+            **result
         }
 
     except Exception as e:
         logger.error(f"❌ Error processing {clothing_id}: {e}")
 
+        # Send error notification via WebSocket
+        publisher.publish_error(clothing_id, str(e))
+
         # Mark as failed in database
         try:
-            db = DatabaseManager()
+            db = DatabaseManager(user_token=user_token)
             db.mark_processing_failed(clothing_id, str(e))
         except Exception as db_error:
             logger.error(f"❌ Additional DB error: {db_error}")
+
+        # Cleanup
+        publisher.close()
 
         # Retry the task (max 3 times with exponential backoff)
         try:
@@ -155,13 +191,11 @@ def health_check_task() -> Dict[str, bool]:
         Dict with service health status
     """
     try:
-        storage = StorageManager()
         ai = ClothingAI()
         db = DatabaseManager()
 
         return {
             'celery': True,
-            'storage': storage.health_check(),
             'ai': ai.health_check(),
             'database': db.health_check()
         }

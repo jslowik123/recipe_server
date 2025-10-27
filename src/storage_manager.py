@@ -12,18 +12,30 @@ class StorageManager:
     Verwaltet Upload, Download und Validierung von Bilddateien
     """
     
-    def __init__(self):
+    def __init__(self, user_token: str):
         """
         Initialisiert den StorageManager mit Supabase
+
+        Args:
+            user_token: JWT token for authenticated requests (respects RLS)
         """
         self.logger = logging.getLogger(__name__)
         self.supabase_url = os.getenv('SUPABASE_URL')
         self.supabase_key = os.getenv('SUPABASE_ANON_KEY')
-        
+
         if not self.supabase_url or not self.supabase_key:
-            raise ValueError("Supabase URL und Key müssen gesetzt sein")
-        
-        self.client: Client = create_client(self.supabase_url, self.supabase_key)
+            raise ValueError("Supabase URL und ANON_KEY müssen gesetzt sein")
+
+        if not user_token:
+            raise ValueError("User Token ist erforderlich")
+
+        # Create client with user token (for RLS)
+        # Use user_token as the key instead of anon_key for authenticated operations
+        self.client: Client = create_client(
+            self.supabase_url,
+            user_token  # Use user token directly instead of anon key
+        )
+
         self.original_bucket = "clothing-images-original"  # Originale Uploads
         self.processed_bucket = "clothing-images-processed"  # Verarbeitete/extrahierte Bilder
     
@@ -83,7 +95,7 @@ class StorageManager:
             unique_filename = f"{user_id}/{uuid4()}{file_extension}"
             
             # In Supabase Storage hochladen
-            result = self.client.storage.from_(self.original_bucket).upload(
+            self.client.storage.from_(self.original_bucket).upload(
                 path=unique_filename,
                 file=file_content,
                 file_options={
@@ -91,9 +103,6 @@ class StorageManager:
                     "upsert": False  # Keine Überschreibung
                 }
             )
-            
-            if result.status_code not in [200, 201]:
-                raise Exception(f"Upload fehlgeschlagen: {result}")
 
             # Signierte URL generieren (für private Buckets, 1 Jahr gültig)
             signed_url_response = self.client.storage.from_(self.original_bucket).create_signed_url(
@@ -130,7 +139,7 @@ class StorageManager:
             file_extension = self._get_file_extension(content_type)
             unique_filename = f"{user_id}/{clothing_id}_processed{file_extension}"
             
-            result = self.client.storage.from_(self.processed_bucket).upload(
+            self.client.storage.from_(self.processed_bucket).upload(
                 path=unique_filename,
                 file=file_content,
                 file_options={
@@ -138,9 +147,6 @@ class StorageManager:
                     "upsert": True  # Überschreibung erlaubt für Updates
                 }
             )
-            
-            if result.status_code not in [200, 201]:
-                raise Exception(f"Upload des verarbeiteten Bildes fehlgeschlagen: {result}")
 
             # Signierte URL generieren (für private Buckets, 1 Jahr gültig)
             signed_url_response = self.client.storage.from_(self.processed_bucket).create_signed_url(
@@ -171,15 +177,9 @@ class StorageManager:
             True wenn erfolgreich gelöscht
         """
         try:
-            result = self.client.storage.from_(bucket_name).remove([file_path])
-
-            if result.status_code == 200:
-                self.logger.info(f"Bild gelöscht: {file_path}")
-                return True
-            else:
-                self.logger.error(f"Fehler beim Löschen: {result}")
-                return False
-
+            self.client.storage.from_(bucket_name).remove([file_path])
+            self.logger.info(f"Bild gelöscht: {file_path}")
+            return True
         except Exception as e:
             self.logger.error(f"Fehler beim Löschen des Bildes: {e}")
             return False

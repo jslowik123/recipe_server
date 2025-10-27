@@ -24,12 +24,31 @@ async def lifespan(app: fastapi.FastAPI):
     """Application lifespan manager"""
     # Startup
     logger.info("🚀 Starting Wardroberry API...")
+
+    # Initialize WebSocket Manager
+    from src.websocket_manager import initialize_websocket_manager
+    try:
+        ws_manager = await initialize_websocket_manager(config.redis_url)
+        logger.info("✅ WebSocket Manager initialized")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize WebSocket Manager: {e}")
+        raise
+
     logger.info("✅ Application startup complete")
-    logger.info("test_2")
     yield
 
     # Shutdown
     logger.info("🛑 Shutting down application...")
+
+    # Cleanup WebSocket Manager
+    try:
+        from src.websocket_manager import get_websocket_manager
+        ws_manager = get_websocket_manager()
+        await ws_manager.cleanup()
+        logger.info("✅ WebSocket Manager cleaned up")
+    except Exception as e:
+        logger.error(f"⚠️ Error cleaning up WebSocket Manager: {e}")
+
     logger.info("✅ Application shutdown complete")
 
 app = fastapi.FastAPI(
@@ -98,13 +117,8 @@ def health_check():
         health_status["services"]["database"] = False
         health_status["status"] = "degraded"
 
-    # Check Supabase Storage
-    try:
-        storage = StorageManager()
-        health_status["services"]["storage"] = storage.health_check()
-    except Exception as e:
-        health_status["services"]["storage"] = False
-        health_status["status"] = "degraded"
+    # Storage health check skipped (requires user authentication)
+    health_status["services"]["storage"] = "auth_required"
 
     # Check OpenAI
     try:

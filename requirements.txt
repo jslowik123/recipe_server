@@ -1,13 +1,28 @@
-fastapi
-uvicorn[standard]
-openai
-python-dotenv
-redis
-python-jose
-pydantic
-supabase
-slowapi
-markdown
-celery[redis]
-gevent
-python-multipart
+# FastAPI & Server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# Async & Concurrency
+gevent>=23.9.0
+
+# Redis & Celery
+redis>=5.0.0
+celery>=5.3.0
+
+# Authentication & Security
+python-jose[cryptography]>=3.3.0
+
+# Database & Storage
+supabase>=2.0.0
+pydantic>=2.0.0
+
+# API & Rate Limiting
+slowapi>=0.1.9
+
+# AI & Processing
+openai>=1.0.0
+
+# Utilities
+python-dotenv>=1.0.0
+markdown>=3.5.0
