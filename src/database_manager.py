@@ -763,41 +763,63 @@ class DatabaseManager:
     def get_user_statistics(self, user_id: str) -> Dict[str, Any]:
         """
         Holt Statistiken für einen Nutzer
-        
+
         Args:
             user_id: UUID des Nutzers
-            
+
         Returns:
-            Dict mit verschiedenen Statistiken
+            Dict mit Kleidungsstück-Statistiken
         """
         try:
-            # Anzahl Kleidungsstücke
+            # Anzahl Kleidungsstücke gesamt
             clothes_result = self.client.table('clothes').select('id', count='exact').eq('user_id', user_id).execute()
-            clothes_count = clothes_result.count or 0
-            
-            # Anzahl Outfits
-            outfits_result = self.client.table('outfits').select('id', count='exact').eq('user_id', user_id).execute()
-            outfits_count = outfits_result.count or 0
-            
-            # Getragene Outfits
-            worn_outfits_result = self.client.table('outfits').select('id', count='exact').eq('user_id', user_id).not_.is_('worn_at', 'null').execute()
-            worn_outfits_count = worn_outfits_result.count or 0
-            
-            # Kategorien-Verteilung
-            categories_result = self.client.table('clothes').select('category').eq('user_id', user_id).execute()
+            total_count = clothes_result.count or 0
+
+            # Anzahl nach Processing-Status
+            completed_result = self.client.table('clothes').select('id', count='exact')\
+                .eq('user_id', user_id)\
+                .eq('processing_status', ProcessingStatus.COMPLETED.value)\
+                .execute()
+            completed_count = completed_result.count or 0
+
+            processing_result = self.client.table('clothes').select('id', count='exact')\
+                .eq('user_id', user_id)\
+                .eq('processing_status', ProcessingStatus.PROCESSING.value)\
+                .execute()
+            processing_count = processing_result.count or 0
+
+            pending_result = self.client.table('clothes').select('id', count='exact')\
+                .eq('user_id', user_id)\
+                .eq('processing_status', ProcessingStatus.PENDING.value)\
+                .execute()
+            pending_count = pending_result.count or 0
+
+            failed_result = self.client.table('clothes').select('id', count='exact')\
+                .eq('user_id', user_id)\
+                .eq('processing_status', ProcessingStatus.FAILED.value)\
+                .execute()
+            failed_count = failed_result.count or 0
+
+            # Kategorien-Verteilung (nur completed items)
+            categories_result = self.client.table('clothes').select('category')\
+                .eq('user_id', user_id)\
+                .eq('processing_status', ProcessingStatus.COMPLETED.value)\
+                .execute()
             categories = {}
             for item in categories_result.data or []:
                 category = item['category']
-                categories[category] = categories.get(category, 0) + 1
-            
+                if category and category != 'Wird analysiert...':
+                    categories[category] = categories.get(category, 0) + 1
+
             return {
-                'total_clothes': clothes_count,
-                'total_outfits': outfits_count,
-                'worn_outfits': worn_outfits_count,
-                'categories_distribution': categories,
-                'unworn_outfits': outfits_count - worn_outfits_count
+                'total_clothes': total_count,
+                'completed': completed_count,
+                'processing': processing_count,
+                'pending': pending_count,
+                'failed': failed_count,
+                'categories_distribution': categories
             }
-            
+
         except APIError as e:
             self.logger.error(f"Fehler beim Laden der Statistiken: {e}")
             raise
