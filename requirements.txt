@@ -2,7 +2,7 @@ fastapi
 uvicorn[standard]
 openai
 python-dotenv
-redis
+redis[hiredis]
 python-jose
 pydantic
 supabase
