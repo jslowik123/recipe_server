@@ -71,7 +71,7 @@ class ClothingAI:
             
             # API-Aufruf
             response = self.client.chat.completions.create(
-                model="gpt-4.1-mini",
+                model="gpt-4o-mini",
                 messages=[
                     {
                         "role": "system",
@@ -202,24 +202,25 @@ class ClothingAI:
         with open(image_path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode('utf-8')
 
-    def extract_clothing(self, image_content: bytes) -> Dict[str, Any]:
+    def extract_clothing(self, image_content: bytes) -> bytes:
         """
-        Extrahiert Kleidungsstücke aus einem Bild mit OpenAI Vision API
+        Extrahiert Kleidungsstücke aus einem Bild mit OpenAI Responses API
+        Verwendet image_generation tool um das Kleidungsstück auf weißem Hintergrund zu generieren
 
         Args:
             image_content: Binärdaten des Bildes
 
         Returns:
-            Dict mit extrahierten Kleidungsstücken
+            bytes: Generiertes Bild als PNG-Bytes
         """
         try:
             # Eingehende Bildbytes in Base64 konvertieren
             base64_image = base64.b64encode(image_content).decode("utf-8")
 
-            prompt = "Erstelle ein fotorealistisches Bild des Kleidungsstücks aus dem Referenzbild, isoliert auf weißem Hintergrund."
+            prompt = "Erstelle ein fotorealistisches Bild des Kleidungsstücks aus dem Referenzbild, isoliert auf weißem Hintergrund. Entferne den Hintergrund und zeige nur das Kleidungsstück."
 
             response = self.client.responses.create(
-                model="gpt-4.1",
+                model="gpt-4o",  # Model für reasoning/understanding
                 input=[
                     {
                         "role": "user",
@@ -234,26 +235,27 @@ class ClothingAI:
                 ],
                 tools=[{
                     "type": "image_generation",
-                    "quality": "high",
+                    "model": "gpt-image-1",  # Spezifisches Model für Image Generation
+                    "background": "opaque",  # Weißer Hintergrund
                 }],
             )
 
-
+            # Extrahiere image_generation_call aus der Response
             image_generation_calls = [
                 output for output in response.output if output.type == "image_generation_call"
             ]
 
             if image_generation_calls:
+                # Das generierte Bild ist in base64 im result
                 generated_image_base64 = image_generation_calls[0].result
                 generated_image_bytes = base64.b64decode(generated_image_base64)
-                # Optional: lokal speichern zu Debug-Zwecken
-                with open("ergebnis.png", "wb") as f:
-                    f.write(generated_image_bytes)
+
+                self.logger.info(f"Kleidungsstück erfolgreich extrahiert ({len(generated_image_bytes)} bytes)")
                 return generated_image_bytes
             else:
-                raise RuntimeError("Image generation call fehlgeschlagen")
+                raise RuntimeError("Image generation call fehlgeschlagen - keine Bild-Generierung in der Response")
         except Exception as e:
-            self.logger.error(f"Fehler bei der Kleidungsanalyse: {e}")
+            self.logger.error(f"Fehler bei der Kleidungsextraktion: {e}")
             raise
     
     def health_check(self) -> bool:
