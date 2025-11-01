@@ -56,7 +56,8 @@ class ClothingAI:
                 "confidence": "Vertrauenswert der Analyse (0-1)"
             }
 
-            Kategorien: Oberteil, Hose, Kleid, Rock, Jacke, Mantel, Pullover, T-Shirt, Hemd, Bluse, Shorts, Jeans, Schuhe, Stiefel, Sneaker, Sandalen, Accessoire, Gürtel, Mütze, Schal
+            Kategorien: Oberteil, Hose, Kleid, Rock, Jacke, Schuhe, Accessoire
+            (Oberteil = T-Shirt, Hemd, Bluse, Pullover, etc.)
 
             Farben: schwarz, weiß, grau, braun, beige, rot, rosa, orange, gelb, grün, blau, lila, bunt, gemustert
 
@@ -100,9 +101,16 @@ class ClothingAI:
             
             # Response verarbeiten
             content = response.choices[0].message.content.strip()
-            
-            # JSON parsen
+
+            # JSON parsen (entferne Markdown code blocks falls vorhanden)
             import json
+            import re
+
+            # Entferne ```json ... ``` oder ``` ... ``` falls vorhanden
+            content = re.sub(r'^```(?:json)?\s*\n', '', content)
+            content = re.sub(r'\n```\s*$', '', content)
+            content = content.strip()
+
             try:
                 analysis_result = json.loads(content)
                 
@@ -130,11 +138,9 @@ class ClothingAI:
         Returns:
             Validiertes und normalisiertes Ergebnis
         """
-        # Erlaubte Werte definieren
+        # Erlaubte Werte definieren (nur Haupt-Kategorien die DB erlaubt)
         allowed_categories = [
-            "Oberteil", "Hose", "Kleid", "Rock", "Jacke", "Mantel", "Pullover", 
-            "T-Shirt", "Hemd", "Bluse", "Shorts", "Jeans", "Schuhe", "Stiefel", 
-            "Sneaker", "Sandalen", "Accessoire", "Gürtel", "Mütze", "Schal"
+            "Oberteil", "Hose", "Kleid", "Rock", "Jacke", "Schuhe", "Accessoire"
         ]
         
         allowed_colors = [

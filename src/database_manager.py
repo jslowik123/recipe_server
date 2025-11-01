@@ -260,14 +260,15 @@ class DatabaseManager:
                 update_data['color'] = color
             if style:
                 update_data['style'] = style
-            if season:
-                update_data['season'] = season
-            if material:
-                update_data['material'] = material
-            if occasion:
-                update_data['occasion'] = occasion
-            if confidence is not None:
-                update_data['ai_confidence'] = confidence
+            # Note: season, material, occasion, confidence columns not implemented in DB yet
+            # if season:
+            #     update_data['season'] = season
+            # if material:
+            #     update_data['material'] = material
+            # if occasion:
+            #     update_data['occasion'] = occasion
+            # if confidence is not None:
+            #     update_data['confidence'] = confidence
             
             result = self.client.table('clothes').update(update_data).eq('id', clothing_id).execute()
             
@@ -300,9 +301,10 @@ class DatabaseManager:
                 'processing_status': ProcessingStatus.FAILED.value,
                 'updated_at': datetime.now(timezone.utc).isoformat()
             }
-            
-            if error_message:
-                update_data['processing_error'] = error_message
+
+            # Note: processing_error column not implemented in DB yet
+            # if error_message:
+            #     update_data['processing_error'] = error_message
             
             result = self.client.table('clothes').update(update_data).eq('id', clothing_id).execute()
             

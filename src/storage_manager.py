@@ -99,8 +99,7 @@ class StorageManager:
                 path=unique_filename,
                 file=file_content,
                 file_options={
-                    "content-type": content_type,
-                    "upsert": False  # Keine Überschreibung
+                    "content-type": content_type
                 }
             )
 
@@ -143,8 +142,7 @@ class StorageManager:
                 path=unique_filename,
                 file=file_content,
                 file_options={
-                    "content-type": content_type,
-                    "upsert": True  # Überschreibung erlaubt für Updates
+                    "content-type": content_type
                 }
             )
 

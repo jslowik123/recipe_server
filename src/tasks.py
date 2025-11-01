@@ -38,10 +38,12 @@ celery_app.conf.update(
     task_track_started=True,
     task_time_limit=300,  # 5 minutes max per task
     task_soft_time_limit=240,  # 4 minutes soft limit
-    task_acks_late=True,  # Acknowledge after task completion
-    worker_prefetch_multiplier=1,  # One task at a time per worker
+    task_acks_late=False,  # Acknowledge immediately (changed from True)
+    worker_prefetch_multiplier=4,  # Prefetch multiple tasks (changed from 1)
     task_default_retry_delay=60,  # 1 minute retry delay
     task_max_retries=3,
+    worker_log_format='[%(asctime)s: %(levelname)s/%(processName)s] %(message)s',
+    worker_task_log_format='[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s',
 )
 
 

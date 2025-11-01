@@ -22,6 +22,7 @@ slowapi>=0.1.9
 
 # AI & Processing
 openai>=1.0.0
+pillow>=10.0.0
 
 # Utilities
 python-dotenv>=1.0.0

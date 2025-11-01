@@ -6,6 +6,10 @@ Starts Celery worker with gevent pool for async I/O processing.
 Usage:
     python -m src.worker
 """
+# IMPORTANT: Monkey patch BEFORE any other imports when using gevent
+from gevent import monkey
+monkey.patch_all()
+
 import sys
 import logging
 
